@@ -1,0 +1,384 @@
+import SpriteKit
+import SwiftUI
+
+protocol GameSceneDelegate: AnyObject {
+    func sceneDidPlacePiece(accuracy: Double, placed: Int, total: Int)
+    func sceneDidCompleteLevel(accuracy: Double)
+    func sceneDidUseMove()
+    func sceneDidRejectPiece()
+}
+
+/// SpriteKit scene that renders the board, target silhouette and draggable pieces,
+/// and implements all special mechanics (gravity, rotation, teleporters, ...).
+final class GameScene: SKScene {
+
+    weak var gameDelegate: GameSceneDelegate?
+
+    private let level: LevelDefinition
+    private let theme: Theme
+    private let settings = GameSettings.shared
+
+    private var boardNode = SKNode()
+    private var pieceNodes: [PieceNode] = []
+    private var socketNodes: [SKShapeNode] = []
+    private var portalNodes: [SKShapeNode] = []
+    private var darknessMask: SKShapeNode?
+
+    private var activePiece: PieceNode?
+    private var dragOffset: CGPoint = .zero
+    private var placedCount = 0
+    private var accuracySamples: [Double] = []
+    private var boardAngle: CGFloat = 0
+
+    private var snapDistance: CGFloat { min(size.width, size.height) * 0.06 }
+    private var boardRect: CGRect {
+        CGRect(x: size.width * 0.06, y: size.height * 0.24,
+               width: size.width * 0.88, height: size.height * 0.62)
+    }
+
+    init(level: LevelDefinition, theme: Theme, size: CGSize) {
+        self.level = level
+        self.theme = theme
+        super.init(size: size)
+        scaleMode = .resizeFill
+        backgroundColor = .clear
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override func didMove(to view: SKView) {
+        view.isMultipleTouchEnabled = true
+        setupBoard()
+        setupSockets()
+        setupPieces()
+        setupPortals()
+        startBoardMechanics()
+    }
+
+    // MARK: - Setup
+
+    private func setupBoard() {
+        let board = SKShapeNode(rect: CGRect(origin: CGPoint(x: -boardRect.width / 2, y: -boardRect.height / 2),
+                                             size: boardRect.size), cornerRadius: 28)
+        board.fillColor = UIColor(theme.boardLight).withAlphaComponent(0.5)
+        board.strokeColor = UIColor.separator.withAlphaComponent(0.4)
+        board.lineWidth = 1
+        boardNode.position = CGPoint(x: boardRect.midX, y: boardRect.midY)
+        boardNode.addChild(board)
+        addChild(boardNode)
+    }
+
+    private func setupSockets() {
+        for piece in level.pieces {
+            let socket = makeShapeNode(for: piece, filled: false)
+            socket.position = boardPoint(from: piece.targetPosition)
+            socket.zRotation = CGFloat(piece.targetRotation) * .pi / 2
+            socket.xScale = piece.targetFlipped ? -1 : 1
+            socket.fillColor = UIColor.label.withAlphaComponent(0.06)
+            socket.strokeColor = UIColor.label.withAlphaComponent(0.18)
+            socket.lineWidth = 2
+            socket.name = "socket-\(piece.id)"
+            boardNode.addChild(socket)
+            socketNodes.append(socket)
+
+            if level.boardMechanics.contains(.movingTargets) {
+                let drift = SKAction.sequence([
+                    .moveBy(x: 26, y: 0, duration: 1.6),
+                    .moveBy(x: -52, y: 0, duration: 3.2),
+                    .moveBy(x: 26, y: 0, duration: 1.6),
+                ])
+                drift.timingMode = .easeInEaseOut
+                socket.run(.repeatForever(drift))
+            }
+        }
+
+        if level.boardMechanics.contains(.darkness) {
+            let cover = SKShapeNode(rect: CGRect(origin: .zero, size: size))
+            cover.fillColor = UIColor.black.withAlphaComponent(0.86)
+            cover.strokeColor = .clear
+            cover.zPosition = 50
+            cover.name = "darkness"
+            addChild(cover)
+            darknessMask = cover
+        }
+    }
+
+    private func setupPieces() {
+        for piece in level.pieces {
+            let node = PieceNode(definition: piece, theme: theme, unit: pieceUnit(for: piece))
+            node.position = CGPoint(x: piece.spawnPosition.x * size.width,
+                                    y: piece.spawnPosition.y * size.height)
+            node.zRotation = CGFloat(piece.spawnRotation) * .pi / 2
+            node.zPosition = 10 + CGFloat(piece.layer * 5)
+            addChild(node)
+            pieceNodes.append(node)
+
+            if piece.mechanics.contains(.locked) { node.applyLockedState() }
+            if piece.mechanics.contains(.invisible) { node.startBlinking() }
+            if piece.mechanics.contains(.shapeShifting) { node.startShapeShifting() }
+        }
+    }
+
+    private func setupPortals() {
+        for pair in level.portals {
+            for (point, color) in [(pair.entry, UIColor.systemTeal), (pair.exit, UIColor.systemPurple)] {
+                let portal = SKShapeNode(circleOfRadius: 22)
+                portal.position = CGPoint(x: point.x * size.width, y: point.y * size.height)
+                portal.strokeColor = color
+                portal.lineWidth = 3
+                portal.glowWidth = 6
+                portal.zPosition = 5
+                portal.run(.repeatForever(.rotate(byAngle: .pi * 2, duration: 4)))
+                addChild(portal)
+                portalNodes.append(portal)
+            }
+        }
+    }
+
+    private func startBoardMechanics() {
+        if level.boardMechanics.contains(.rotatingBoard) && !settings.reduceMotion {
+            let wait = SKAction.wait(forDuration: level.isBoss ? 2.0 : 4.0)
+            let rotate = SKAction.run { [weak self] in
+                guard let self else { return }
+                self.boardAngle += .pi / 2
+                self.boardNode.run(.rotate(toAngle: self.boardAngle, duration: 0.6, shortestUnitArc: false))
+                HapticsManager.shared.soft()
+            }
+            boardNode.run(.repeatForever(.sequence([wait, rotate])))
+        }
+        if level.boardMechanics.contains(.gravity) {
+            physicsWorld.gravity = CGVector(dx: 0, dy: -3.5)
+            physicsBody = SKPhysicsBody(edgeLoopFrom: CGRect(origin: .zero, size: size))
+            for node in pieceNodes { node.enableGravity() }
+        }
+    }
+
+    // MARK: - Touch handling
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let touch = touches.first else { return }
+        let location = touch.location(in: self)
+        revealDarkness(at: location)
+
+        guard let node = pieceNodes
+            .filter({ !$0.isPlaced && $0.contains(location) && $0.canBeMoved })
+            .max(by: { $0.zPosition < $1.zPosition }) else { return }
+
+        if node.definition.mechanics.contains(.locked) && node.isLocked {
+            node.shakeLock()
+            HapticsManager.shared.warning()
+            if touch.tapCount >= 2 { node.unlock() }   // double-tap unlocks
+            return
+        }
+
+        activePiece = node
+        dragOffset = CGPoint(x: node.position.x - location.x, y: node.position.y - location.y)
+        node.beginDrag()
+        HapticsManager.shared.soft()
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let touch = touches.first else { return }
+        var location = touch.location(in: self)
+        revealDarkness(at: location)
+        guard let piece = activePiece else { return }
+
+        if level.boardMechanics.contains(.mirrorControls) {
+            let previous = touch.previousLocation(in: self)
+            let delta = CGPoint(x: location.x - previous.x, y: location.y - previous.y)
+            location = CGPoint(x: piece.position.x - dragOffset.x - delta.x,
+                               y: piece.position.y - dragOffset.y + delta.y)
+        }
+
+        piece.position = CGPoint(x: location.x + dragOffset.x, y: location.y + dragOffset.y)
+        checkPortalTravel(piece)
+        applyMagnetism(to: piece)
+        highlightNearestSocket(for: piece)
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        defer { activePiece = nil }
+        guard let piece = activePiece else { return }
+        piece.endDrag()
+        gameDelegate?.sceneDidUseMove()
+        attemptSnap(piece)
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        activePiece?.endDrag()
+        activePiece = nil
+    }
+
+    /// Called by gesture recognizers in the hosting view.
+    func rotateActiveOrNearest() {
+        guard let piece = pieceNodes.first(where: { !$0.isPlaced && $0.canBeMoved }) else { return }
+        rotate(piece: piece)
+    }
+
+    func rotate(piece: PieceNode) {
+        piece.currentRotation = (piece.currentRotation + 1) % 4
+        piece.run(.rotate(toAngle: CGFloat(piece.currentRotation) * .pi / 2, duration: 0.18, shortestUnitArc: true))
+        gameDelegate?.sceneDidUseMove()
+        HapticsManager.shared.light()
+        AudioManager.shared.play(.rotate)
+    }
+
+    func flipActivePiece() {
+        guard let piece = activePiece ?? pieceNodes.first(where: { !$0.isPlaced && $0.canBeMoved }) else { return }
+        piece.currentFlipped.toggle()
+        piece.run(.scaleX(to: piece.currentFlipped ? -1 : 1, duration: 0.18))
+        gameDelegate?.sceneDidUseMove()
+        HapticsManager.shared.light()
+        AudioManager.shared.play(.rotate)
+    }
+
+    func showHint() {
+        guard let piece = pieceNodes.first(where: { !$0.isPlaced }),
+              let socket = socketNodes.first(where: { $0.name == "socket-\(piece.definition.id)" }) else { return }
+        let pulse = SKAction.sequence([.scale(to: 1.15, duration: 0.3), .scale(to: 1.0, duration: 0.3)])
+        socket.run(.repeat(pulse, count: 3))
+        piece.run(.repeat(pulse, count: 3))
+    }
+
+    // MARK: - Snapping & mechanics
+
+    private func attemptSnap(_ piece: PieceNode) {
+        guard let socket = socketNodes.first(where: { $0.name == "socket-\(piece.definition.id)" }) else { return }
+        let socketScenePosition = boardNode.convert(socket.position, to: self)
+        let distance = hypot(piece.position.x - socketScenePosition.x, piece.position.y - socketScenePosition.y)
+
+        let effectiveTargetRotation = (piece.definition.targetRotation + rotationOffsetFromBoard()) % 4
+        let rotationMatches = !piece.definition.requiresRotation || piece.currentRotation == effectiveTargetRotation
+        let flipMatches = piece.currentFlipped == piece.definition.targetFlipped
+
+        if distance <= snapDistance && rotationMatches && flipMatches {
+            let accuracy = 1.0 - Double(distance / snapDistance) * 0.5
+            place(piece, at: socketScenePosition, accuracy: accuracy)
+        } else {
+            if piece.definition.mechanics.contains(.frozen) {
+                piece.freezeInPlace()
+                HapticsManager.shared.warning()
+            } else if distance <= snapDistance * 2 {
+                piece.run(.sequence([.moveBy(x: 8, y: 0, duration: 0.05),
+                                     .moveBy(x: -16, y: 0, duration: 0.1),
+                                     .moveBy(x: 8, y: 0, duration: 0.05)]))
+                HapticsManager.shared.warning()
+                AudioManager.shared.play(.reject)
+                gameDelegate?.sceneDidRejectPiece()
+            }
+        }
+    }
+
+    private func place(_ piece: PieceNode, at position: CGPoint, accuracy: Double) {
+        piece.isPlaced = true
+        piece.removeAllActions()
+        piece.disableGravity()
+        piece.run(.group([
+            .move(to: position, duration: 0.12),
+            .scale(to: 1.0, duration: 0.12),
+        ]))
+        piece.zRotation = CGFloat(((piece.definition.targetRotation + rotationOffsetFromBoard()) % 4)) * .pi / 2
+        piece.alpha = 1
+        piece.emitSnapParticles(theme: theme)
+
+        placedCount += 1
+        accuracySamples.append(accuracy)
+        HapticsManager.shared.snap()
+        AudioManager.shared.play(.snap)
+        gameDelegate?.sceneDidPlacePiece(accuracy: accuracy, placed: placedCount, total: level.pieces.count)
+
+        if placedCount == level.pieces.count {
+            let meanAccuracy = accuracySamples.reduce(0, +) / Double(accuracySamples.count)
+            run(.sequence([.wait(forDuration: 0.35), .run { [weak self] in
+                self?.celebrate()
+                self?.gameDelegate?.sceneDidCompleteLevel(accuracy: meanAccuracy)
+            }]))
+        }
+    }
+
+    private func rotationOffsetFromBoard() -> Int {
+        Int((boardAngle / (.pi / 2)).rounded()) % 4
+    }
+
+    private func checkPortalTravel(_ piece: PieceNode) {
+        guard let pair = level.portals.first else { return }
+        let entry = CGPoint(x: pair.entry.x * size.width, y: pair.entry.y * size.height)
+        if hypot(piece.position.x - entry.x, piece.position.y - entry.y) < 26 {
+            let exit = CGPoint(x: pair.exit.x * size.width, y: pair.exit.y * size.height)
+            piece.run(.sequence([
+                .scale(to: 0.1, duration: 0.12),
+                .move(to: exit, duration: 0),
+                .scale(to: 1.05, duration: 0.12),
+            ]))
+            activePiece = nil
+            HapticsManager.shared.medium()
+            AudioManager.shared.play(.teleport)
+        }
+    }
+
+    private func applyMagnetism(to piece: PieceNode) {
+        guard piece.definition.mechanics.contains(.magnetic) else { return }
+        for other in pieceNodes where other !== piece && !other.isPlaced && other.definition.mechanics.contains(.magnetic) {
+            let dx = piece.position.x - other.position.x
+            let dy = piece.position.y - other.position.y
+            let distance = max(hypot(dx, dy), 1)
+            if distance < 140 {
+                let pull = 2.2 / distance
+                other.position = CGPoint(x: other.position.x + dx * pull, y: other.position.y + dy * pull)
+            }
+        }
+    }
+
+    private func highlightNearestSocket(for piece: PieceNode) {
+        guard let socket = socketNodes.first(where: { $0.name == "socket-\(piece.definition.id)" }) else { return }
+        let socketScenePosition = boardNode.convert(socket.position, to: self)
+        let distance = hypot(piece.position.x - socketScenePosition.x, piece.position.y - socketScenePosition.y)
+        socket.fillColor = distance <= snapDistance
+            ? UIColor(theme.pieceColors[piece.definition.id % theme.pieceColors.count]).withAlphaComponent(0.25)
+            : UIColor.label.withAlphaComponent(0.06)
+    }
+
+    private func revealDarkness(at point: CGPoint) {
+        guard let mask = darknessMask else { return }
+        let hole = UIBezierPath(rect: CGRect(origin: .zero, size: size))
+        hole.append(UIBezierPath(ovalIn: CGRect(x: point.x - 90, y: point.y - 90, width: 180, height: 180)).reversing())
+        mask.path = hole.cgPath
+    }
+
+    private func celebrate() {
+        guard !settings.reduceMotion else { return }
+        for piece in pieceNodes {
+            piece.run(.sequence([.scale(to: 1.08, duration: 0.15), .scale(to: 1.0, duration: 0.2)]))
+        }
+        if let emitter = ParticleFactory.confetti(theme: theme, size: size) {
+            emitter.position = CGPoint(x: size.width / 2, y: size.height)
+            emitter.zPosition = 100
+            addChild(emitter)
+            emitter.run(.sequence([.wait(forDuration: 2.5), .removeFromParent()]))
+        }
+        AudioManager.shared.play(.complete)
+        HapticsManager.shared.success()
+    }
+
+    // MARK: - Geometry helpers
+
+    private func boardPoint(from normalized: CGPoint) -> CGPoint {
+        CGPoint(x: (normalized.x - 0.5) * boardRect.width,
+                y: (normalized.y - 0.5) * boardRect.height)
+    }
+
+    private func pieceUnit(for piece: PieceDefinition) -> CGFloat {
+        piece.size * min(boardRect.width, boardRect.height)
+    }
+
+    func makeShapeNode(for piece: PieceDefinition, filled: Bool) -> SKShapeNode {
+        let unit = pieceUnit(for: piece)
+        let path = CGMutablePath()
+        let points = piece.shape.unitPoints.map {
+            CGPoint(x: ($0.x - 0.5) * unit, y: ($0.y - 0.5) * unit)
+        }
+        path.addLines(between: points)
+        path.closeSubpath()
+        return SKShapeNode(path: path)
+    }
+}
