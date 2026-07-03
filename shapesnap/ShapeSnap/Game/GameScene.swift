@@ -8,6 +8,7 @@ protocol GameSceneDelegate: AnyObject {
     func sceneDidRejectPiece()
     func sceneDidCollectBonus()
     func sceneDidTouchHazard()
+    func sceneDidTakeBossHit()
 }
 
 /// SpriteKit scene that renders the board, target silhouette and draggable pieces,
@@ -31,6 +32,10 @@ final class GameScene: SKScene {
     private var activePiece: PieceNode?
     private var dragOffset: CGPoint = .zero
     private var lastHazardHit: CFTimeInterval = 0
+    private var bossNode: SKNode?
+    private var projectileNodes: [SKShapeNode] = []
+    private var laserNode: SKShapeNode?
+    private var lastBossHit: CFTimeInterval = 0
     private weak var lastTouchedPiece: PieceNode?
     private var placedCount = 0
     private var accuracySamples: [Double] = []
@@ -61,6 +66,150 @@ final class GameScene: SKScene {
         setupObstacles()
         setupCollectibles()
         startBoardMechanics()
+        if level.isBoss { setupBoss() }
+    }
+
+    // MARK: - Boss fights
+
+    /// Boss levels get a hovering enemy that fires aimed projectiles and
+    /// periodically sweeps a horizontal laser across the board.
+    private func setupBoss() {
+        let boss = SKNode()
+        let body = SKShapeNode(circleOfRadius: 24)
+        body.fillColor = UIColor.systemIndigo
+        body.strokeColor = UIColor.systemPurple
+        body.lineWidth = 3
+        body.glowWidth = 6
+        boss.addChild(body)
+        for dx in [-9.0, 9.0] {
+            let eye = SKShapeNode(circleOfRadius: 4)
+            eye.fillColor = .white
+            eye.strokeColor = .clear
+            eye.position = CGPoint(x: dx, y: 5)
+            boss.addChild(eye)
+        }
+        boss.position = CGPoint(x: boardRect.midX, y: boardRect.maxY - 30)
+        boss.zPosition = 30
+        addChild(boss)
+        bossNode = boss
+
+        let hover = SKAction.sequence([
+            .moveBy(x: 60, y: 0, duration: 1.8),
+            .moveBy(x: -120, y: 0, duration: 3.6),
+            .moveBy(x: 60, y: 0, duration: 1.8),
+        ])
+        hover.timingMode = .easeInEaseOut
+        boss.run(.repeatForever(hover))
+
+        let difficulty = min(1.0, Double(level.world) / 10.0)
+        let fireInterval = max(1.4, 2.8 - difficulty * 1.4)
+        boss.run(.repeatForever(.sequence([
+            .wait(forDuration: fireInterval),
+            .run { [weak self] in self?.fireProjectile() },
+        ])), withKey: "fire")
+        boss.run(.repeatForever(.sequence([
+            .wait(forDuration: max(5.0, 8.0 - difficulty * 3.0)),
+            .run { [weak self] in self?.fireLaser() },
+        ])), withKey: "laser")
+    }
+
+    private func fireProjectile() {
+        guard let boss = bossNode, placedCount < level.pieces.count else { return }
+        let projectile = SKShapeNode(circleOfRadius: 7)
+        projectile.fillColor = UIColor.systemRed
+        projectile.strokeColor = UIColor.systemOrange
+        projectile.glowWidth = 4
+        projectile.position = boss.position
+        projectile.zPosition = 29
+        addChild(projectile)
+        projectileNodes.append(projectile)
+
+        let targetX = activePiece?.position.x
+            ?? pieceNodes.first(where: { !$0.isPlaced })?.position.x
+            ?? boardRect.midX
+        let destination = CGPoint(x: targetX, y: -30)
+        let distance = hypot(destination.x - projectile.position.x, destination.y - projectile.position.y)
+        AudioManager.shared.play(.rotate)
+        projectile.run(.sequence([
+            .move(to: destination, duration: TimeInterval(distance / 320)),
+            .removeFromParent(),
+        ]))
+    }
+
+    private func fireLaser() {
+        guard laserNode == nil, placedCount < level.pieces.count else { return }
+        let y = boardRect.minY + boardRect.height * CGFloat.random(in: 0.15...0.55)
+
+        // Telegraph: a thin warning line, then the beam sweeps right-to-left and back.
+        let warning = SKShapeNode(rect: CGRect(x: 0, y: y - 1.5, width: size.width, height: 3))
+        warning.fillColor = UIColor.systemRed.withAlphaComponent(0.35)
+        warning.strokeColor = .clear
+        warning.zPosition = 28
+        addChild(warning)
+        warning.run(.sequence([
+            .repeat(.sequence([.fadeAlpha(to: 0.15, duration: 0.15), .fadeAlpha(to: 0.6, duration: 0.15)]), count: 3),
+            .removeFromParent(),
+        ]))
+        HapticsManager.shared.warning()
+
+        let beamWidth: CGFloat = 90
+        let beam = SKShapeNode(rect: CGRect(x: -beamWidth / 2, y: -5, width: beamWidth, height: 10),
+                               cornerRadius: 5)
+        beam.fillColor = UIColor.systemRed
+        beam.strokeColor = UIColor.systemOrange
+        beam.glowWidth = 8
+        beam.position = CGPoint(x: size.width + beamWidth, y: y)
+        beam.zPosition = 29
+        laserNode = beam
+
+        run(.sequence([.wait(forDuration: 0.95), .run { [weak self] in
+            guard let self else { return }
+            self.addChild(beam)
+            AudioManager.shared.play(.reject)
+            beam.run(.sequence([
+                .moveTo(x: -beamWidth, duration: 1.3),
+                .moveTo(x: self.size.width + beamWidth, duration: 1.3),
+                .removeFromParent(),
+                .run { [weak self] in self?.laserNode = nil },
+            ]))
+        }]))
+    }
+
+    override func update(_ currentTime: TimeInterval) {
+        guard level.isBoss, currentTime - lastBossHit > 1.0 else { return }
+        projectileNodes.removeAll { $0.parent == nil }
+
+        for piece in pieceNodes where !piece.isPlaced {
+            let radius = piece.collisionRadius * 0.8
+            for projectile in projectileNodes {
+                if hypot(projectile.position.x - piece.position.x,
+                         projectile.position.y - piece.position.y) < radius + 7 {
+                    projectile.removeFromParent()
+                    registerBossHit(on: piece)
+                    return
+                }
+            }
+            if let beam = laserNode, beam.parent != nil,
+               abs(beam.position.y - piece.position.y) < radius + 5,
+               abs(beam.position.x - piece.position.x) < radius + 45 {
+                registerBossHit(on: piece)
+                return
+            }
+        }
+    }
+
+    private func registerBossHit(on piece: PieceNode) {
+        lastBossHit = CACurrentMediaTime()
+        piece.flashDamage()
+        if level.id == LevelCatalog.totalLevels {
+            piece.applyCrack()
+            showBadge("crack!", above: piece)
+        } else {
+            showBadge("-\u{2764}\u{FE0F}", above: piece)
+        }
+        HapticsManager.shared.error()
+        AudioManager.shared.play(.fail)
+        gameDelegate?.sceneDidTakeBossHit()
     }
 
     // MARK: - Setup

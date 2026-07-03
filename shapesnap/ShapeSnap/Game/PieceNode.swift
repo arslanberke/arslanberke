@@ -150,6 +150,26 @@ final class PieceNode: SKNode {
                                  .rotate(byAngle: 0.2, duration: 0.05)]))
     }
 
+    func flashDamage() {
+        let shape = body
+        let originalColor = shape.fillColor
+        shape.run(.sequence([
+            .run { shape.fillColor = .systemRed },
+            .wait(forDuration: 0.18),
+            .run { shape.fillColor = originalColor },
+        ]))
+        run(.sequence([.moveBy(x: 6, y: 0, duration: 0.04),
+                       .moveBy(x: -12, y: 0, duration: 0.08),
+                       .moveBy(x: 6, y: 0, duration: 0.04)]))
+    }
+
+    /// Final-boss damage: the piece visibly cracks and stays scarred.
+    func applyCrack() {
+        body.alpha = max(0.6, body.alpha - 0.15)
+        body.strokeColor = UIColor.systemRed.withAlphaComponent(0.9)
+        body.lineWidth = 2.5
+    }
+
     func freezeInPlace() {
         frozen = true
         body.fillColor = body.fillColor.withAlphaComponent(0.5)

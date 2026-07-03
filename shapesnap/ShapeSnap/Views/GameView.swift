@@ -88,6 +88,15 @@ struct GameView: View {
                 }
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
+                if session.level.isBoss && session.level.id != LevelCatalog.totalLevels {
+                    HStack(spacing: 3) {
+                        ForEach(0..<3, id: \.self) { index in
+                            Image(systemName: index < session.hearts ? "heart.fill" : "heart")
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                        }
+                    }
+                }
             }
             Spacer()
             if session.mode.allowsHints {
@@ -199,6 +208,7 @@ struct GameView: View {
         session.moves = 0
         session.elapsed = 0
         session.placedPieces = 0
+        session.resetHealth()
         buildScene(size: scene?.size ?? .zero)
     }
 }
@@ -309,11 +319,9 @@ struct ResultsOverlay: View {
                             .foregroundStyle(.secondary)
                     }
                 } else {
-                    Text(session.mode == .timeAttack ? "Time's Up!" : "Out of Moves")
+                    Text(failTitle)
                         .font(.system(size: 30, weight: .bold, design: .rounded))
-                    Text(session.mode == .timeAttack
-                         ? "Puzzles solved: \(session.sessionScore)"
-                         : "Hardcore mode allows only \(session.moveLimit ?? 0) moves.")
+                    Text(failSubtitle)
                         .font(.subheadline).foregroundStyle(.secondary)
                     Button("Try Again") { onRetry() }
                         .buttonStyle(PrimaryButtonStyle(color: .red))
@@ -327,6 +335,18 @@ struct ResultsOverlay: View {
             .card(cornerRadius: 32)
             .padding(24)
         }
+    }
+
+    private var failTitle: String {
+        if session.failedToBoss { return "The Boss Got You!" }
+        return session.mode == .timeAttack ? "Time's Up!" : "Out of Moves"
+    }
+
+    private var failSubtitle: String {
+        if session.failedToBoss { return "Dodge the projectiles and the sweeping laser." }
+        return session.mode == .timeAttack
+            ? "Puzzles solved: \(session.sessionScore)"
+            : "Hardcore mode allows only \(session.moveLimit ?? 0) moves."
     }
 }
 

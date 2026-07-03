@@ -21,6 +21,9 @@ final class GameSession: ObservableObject, GameSceneDelegate {
     @Published var newAchievements: [Achievement] = []
     @Published var hintsRemaining: Int
     @Published var bonusCoins = 0                 // collected pickups this level
+    @Published var hearts = 3                     // boss-level health
+    @Published var bossHits = 0                   // hits taken (final boss score penalty)
+    @Published private(set) var failedToBoss = false
 
     var moveLimit: Int? { mode.hasMoveLimit ? level.parMoves + 1 : nil }
 
@@ -91,6 +94,20 @@ final class GameSession: ObservableObject, GameSceneDelegate {
         }
     }
 
+    nonisolated func sceneDidTakeBossHit() {
+        Task { @MainActor in
+            self.bossHits += 1
+            if self.level.id == LevelCatalog.totalLevels {
+                return   // final boss cracks pieces (score penalty) instead of hearts
+            }
+            self.hearts -= 1
+            if self.hearts <= 0 {
+                self.failedToBoss = true
+                self.fail()
+            }
+        }
+    }
+
     nonisolated func sceneDidCollectBonus() {
         Task { @MainActor in
             self.bonusCoins += 15
@@ -114,8 +131,9 @@ final class GameSession: ObservableObject, GameSceneDelegate {
     // MARK: - Completion
 
     private func complete() {
+        let bossPenalty = level.isBoss ? Double(bossHits) * 0.08 : 0
         let score = ScoreCalculator.score(level: level, moves: moves, time: elapsed,
-                                          accuracy: accuracy, completion: 1.0)
+                                          accuracy: max(0.3, accuracy - bossPenalty), completion: 1.0)
         let rating: ScoreRating = mode == .relax ? .perfect : ScoreRating.from(score: score)
         let coins = ScoreCalculator.coins(for: rating, level: level, streak: progress.perfectStreak)
         let result = LevelResult(levelID: level.id, score: score, rating: rating, stars: rating.stars,
@@ -175,13 +193,21 @@ final class GameSession: ObservableObject, GameSceneDelegate {
         placedPieces = 0
         elapsed = mode == .timeAttack ? elapsed : 0
         accuracy = 1.0
+        resetHealth()
         onNextLevel?(level)
+    }
+
+    func resetHealth() {
+        hearts = 3
+        bossHits = 0
+        failedToBoss = false
     }
 
     func setLevel(_ newLevel: LevelDefinition) {
         level = newLevel
         hintsRemaining = mode.allowsHints ? 3 : 0
         bonusCoins = 0
+        resetHealth()
         lastResult = nil
         newAchievements = []
     }
