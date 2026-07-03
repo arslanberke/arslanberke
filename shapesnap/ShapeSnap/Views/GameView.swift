@@ -19,7 +19,7 @@ struct GameView: View {
                     SpriteView(scene: scene, options: [.allowsTransparency])
                         .id(sceneID)
                         .ignoresSafeArea()
-                        .gesture(TapGesture(count: 2).onEnded { scene.flipActivePiece() })
+                        .gesture(TapGesture(count: 2).onEnded { scene.rotateActiveOrNearest(clockwise: false) })
                         .simultaneousGesture(
                             RotationGesture().onEnded { value in
                                 if abs(value.degrees) > 25 { scene.rotateActiveOrNearest() }
@@ -146,13 +146,11 @@ struct GameView: View {
                     ControlIcon(systemName: "chevron.left", label: "Prev")
                 }
             }
-            Button { scene?.rotateActiveOrNearest() } label: {
-                ControlIcon(systemName: "rotate.right.fill", label: "Rotate")
+            Button { scene?.rotateActiveOrNearest(clockwise: false) } label: {
+                ControlIcon(systemName: "rotate.left.fill", label: "Left")
             }
-            if levelNeedsFlip {
-                Button { scene?.flipActivePiece() } label: {
-                    ControlIcon(systemName: "arrow.left.and.right.righttriangle.left.righttriangle.right.fill", label: "Flip")
-                }
+            Button { scene?.rotateActiveOrNearest() } label: {
+                ControlIcon(systemName: "rotate.right.fill", label: "Right")
             }
             if settings.developerMode && isStoryLike {
                 Button { jump(by: 1) } label: {
@@ -164,10 +162,6 @@ struct GameView: View {
 
     private var isStoryLike: Bool {
         session.mode == .story || session.mode == .hardcore || session.mode == .relax
-    }
-
-    private var levelNeedsFlip: Bool {
-        session.level.pieces.contains { !$0.shape.isFlipSymmetric }
     }
 
     private func jump(by delta: Int) {

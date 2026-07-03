@@ -529,12 +529,12 @@ final class GameScene: SKScene {
     }
 
     /// Called by gesture recognizers in the hosting view.
-    func rotateActiveOrNearest() {
+    func rotateActiveOrNearest(clockwise: Bool = true) {
         guard let piece = controllablePiece() else { return }
-        rotate(piece: piece)
+        rotate(piece: piece, clockwise: clockwise)
     }
 
-    /// The piece rotate/flip should act on: the one being dragged, otherwise
+    /// The piece rotate should act on: the one being dragged, otherwise
     /// the last one the player touched, otherwise the first unplaced piece.
     private func controllablePiece() -> PieceNode? {
         if let piece = activePiece, !piece.isPlaced, piece.canBeMoved { return piece }
@@ -542,18 +542,9 @@ final class GameScene: SKScene {
         return pieceNodes.first(where: { !$0.isPlaced && $0.canBeMoved })
     }
 
-    func rotate(piece: PieceNode) {
-        piece.currentRotation = (piece.currentRotation + 1) % 4
+    func rotate(piece: PieceNode, clockwise: Bool = true) {
+        piece.currentRotation = ((piece.currentRotation + (clockwise ? 1 : -1)) % 4 + 4) % 4
         piece.run(.rotate(toAngle: CGFloat(piece.currentRotation) * .pi / 2, duration: 0.18, shortestUnitArc: true))
-        gameDelegate?.sceneDidUseMove()
-        HapticsManager.shared.light()
-        AudioManager.shared.play(.rotate)
-    }
-
-    func flipActivePiece() {
-        guard let piece = controllablePiece() else { return }
-        piece.currentFlipped.toggle()
-        piece.setFlipped(piece.currentFlipped)
         gameDelegate?.sceneDidUseMove()
         HapticsManager.shared.light()
         AudioManager.shared.play(.rotate)
@@ -571,20 +562,16 @@ final class GameScene: SKScene {
         }
     }
 
-    /// "↻ ×2  ⇄"-style description of the rotations/flip still needed, or nil
-    /// when the piece is already correctly oriented.
+    /// "↻ ×2"-style description of the rotations still needed, or nil when the
+    /// piece is already correctly oriented. Shows the shorter direction.
     private func orientationHintText(for piece: PieceNode) -> String? {
         let step = 4 / piece.definition.shape.rotationalSymmetry
-        var text = ""
-        if step > 1 {
-            let target = (piece.definition.targetRotation + rotationOffsetFromBoard()) % 4
-            let needed = ((target - piece.currentRotation) % step + step) % step
-            if needed > 0 { text = needed > 1 ? "↻ ×\(needed)" : "↻" }
-        }
-        if !piece.definition.shape.isFlipSymmetric && piece.currentFlipped != piece.definition.targetFlipped {
-            text += text.isEmpty ? "⇄" : "  ⇄"
-        }
-        return text.isEmpty ? nil : text
+        guard step > 1 else { return nil }
+        let target = (piece.definition.targetRotation + rotationOffsetFromBoard()) % 4
+        let needed = ((target - piece.currentRotation) % step + step) % step
+        guard needed > 0 else { return nil }
+        if needed > step - needed { return step - needed > 1 ? "↺ ×\(step - needed)" : "↺" }
+        return needed > 1 ? "↻ ×\(needed)" : "↻"
     }
 
     private func showBadge(_ text: String, above node: SKNode) {

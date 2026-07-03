@@ -110,7 +110,6 @@ enum LevelGenerator {
         var rng = SeededRandom(seed: seed)
         let pieceCount = pieceCount(world: world, difficulty: difficulty, isBoss: isBoss, rng: &rng)
         let allowRotation = world != 1 && world != 2 || difficulty > 0.35
-        let allowFlip = world == 4 || (world >= 7 && difficulty > 0.5) || world == 0
         // Pulsing timing mechanic appears alongside obstacles in later content.
         let pulsing = (world >= 5 || world == 0) && difficulty > 0.45 && index % 4 == 0
         // Decide up-front whether this level has obstacle bars so targets can be
@@ -121,20 +120,13 @@ enum LevelGenerator {
         var pieces: [PieceDefinition] = []
         var usedTargets: [CGPoint] = []
         for pieceIndex in 0..<pieceCount {
-            // When a flip is called for, force a chiral shape so the mirrored
-            // silhouette is visually distinguishable — flips on symmetric shapes
-            // are meaningless.
-            let wantsFlip = allowFlip && Bool.random(using: &rng)
-            let shape = wantsFlip
-                ? [PieceShape.rightTriangle, .lShape, .zShape].randomElement(using: &rng)!
-                : shapePool(difficulty: difficulty).randomElement(using: &rng)!
+            let shape = shapePool(difficulty: difficulty).randomElement(using: &rng)!
             let size = CGFloat(Double.random(in: 0.16...0.30, using: &rng)) * (isBoss ? 0.85 : 1.0)
             let target = placeTarget(avoiding: usedTargets, size: size,
                                      yRange: hasObstacles ? 0.6...0.88 : 0.35...0.85, rng: &rng)
             usedTargets.append(target)
 
             let targetRotation = allowRotation ? Int.random(in: 0...3, using: &rng) : 0
-            let targetFlipped = wantsFlip
 
             var pieceMechanics: [Mechanic] = []
             if mechanic == .locked || mechanic == .invisible ||
@@ -155,7 +147,7 @@ enum LevelGenerator {
                 size: size,
                 targetPosition: target,
                 targetRotation: targetRotation,
-                targetFlipped: targetFlipped,
+                targetFlipped: false,
                 spawnPosition: traySlot(index: pieceIndex, count: pieceCount, rng: &rng),
                 spawnRotation: allowRotation ? Int.random(in: 0...3, using: &rng) : 0,
                 spawnFlipped: false,
