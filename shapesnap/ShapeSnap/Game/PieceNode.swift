@@ -13,6 +13,7 @@ final class PieceNode: SKNode {
 
     private let body: SKShapeNode
     private let shadow: SKShapeNode
+    private let unit: CGFloat
     private var lockIcon: SKLabelNode?
     private var frozen = false
 
@@ -25,8 +26,25 @@ final class PieceNode: SKNode {
         return max(frame.width, frame.height) / 2 * max(abs(xScale), abs(yScale)) * 0.8
     }
 
+    /// The piece's actual outline in scene space (rotation, flip and animated
+    /// scale included), slightly shrunk so collisions feel forgiving. Used for
+    /// obstacle checks so empty corners of the bounding box never snag.
+    func collisionPolygon(at position: CGPoint) -> [CGPoint] {
+        let scale = max(abs(xScale), abs(yScale)) * 0.94
+        let flip: CGFloat = body.xScale < 0 ? -1 : 1
+        let cosA = cos(zRotation)
+        let sinA = sin(zRotation)
+        return definition.shape.unitPoints.map { point in
+            let x = (point.x - 0.5) * unit * flip * scale
+            let y = (point.y - 0.5) * unit * scale
+            return CGPoint(x: position.x + x * cosA - y * sinA,
+                           y: position.y + x * sinA + y * cosA)
+        }
+    }
+
     init(definition: PieceDefinition, theme: Theme, unit: CGFloat) {
         self.definition = definition
+        self.unit = unit
         self.currentRotation = definition.spawnRotation
         self.currentFlipped = definition.spawnFlipped
 

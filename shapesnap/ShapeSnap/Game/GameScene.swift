@@ -272,23 +272,46 @@ final class GameScene: SKScene {
     /// shrunken piece fits through gaps a grown one cannot.
     private func movementAllowed(for piece: PieceNode, to position: CGPoint) -> Bool {
         guard !level.obstacles.isEmpty else { return true }
-        let pieceRect = collisionRect(for: piece, at: position)
-        return !level.obstacles.contains { !$0.isHazard && obstacleSceneRect($0).intersects(pieceRect) }
+        let polygon = piece.collisionPolygon(at: position)
+        return !level.obstacles.contains { !$0.isHazard && polygonIntersectsRect(polygon, obstacleSceneRect($0)) }
     }
 
-    /// Scene-space bounding box of the piece as actually rendered (rotation,
-    /// flip and pulsing scale included), slightly inset so collisions match
-    /// what the player sees instead of an oversized invisible box.
-    private func collisionRect(for piece: PieceNode, at position: CGPoint) -> CGRect {
-        var frame = piece.calculateAccumulatedFrame()
-        frame = frame.insetBy(dx: frame.width * 0.12, dy: frame.height * 0.12)
-        return frame.offsetBy(dx: position.x - piece.position.x, dy: position.y - piece.position.y)
+    /// Exact polygon-vs-rect intersection so collisions follow the piece's
+    /// real outline — the empty corners of a rotated piece never snag.
+    private func polygonIntersectsRect(_ polygon: [CGPoint], _ rect: CGRect) -> Bool {
+        if polygon.contains(where: { rect.contains($0) }) { return true }
+        let path = CGMutablePath()
+        path.addLines(between: polygon)
+        path.closeSubpath()
+        let corners = [CGPoint(x: rect.minX, y: rect.minY), CGPoint(x: rect.maxX, y: rect.minY),
+                       CGPoint(x: rect.maxX, y: rect.maxY), CGPoint(x: rect.minX, y: rect.maxY)]
+        if corners.contains(where: { path.contains($0) }) { return true }
+        for index in polygon.indices {
+            let a = polygon[index]
+            let b = polygon[(index + 1) % polygon.count]
+            for edge in 0..<4 {
+                if segmentsIntersect(a, b, corners[edge], corners[(edge + 1) % 4]) { return true }
+            }
+        }
+        return false
+    }
+
+    private func segmentsIntersect(_ p1: CGPoint, _ p2: CGPoint, _ p3: CGPoint, _ p4: CGPoint) -> Bool {
+        func cross(_ o: CGPoint, _ a: CGPoint, _ b: CGPoint) -> CGFloat {
+            (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x)
+        }
+        let d1 = cross(p3, p4, p1)
+        let d2 = cross(p3, p4, p2)
+        let d3 = cross(p1, p2, p3)
+        let d4 = cross(p1, p2, p4)
+        return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+               ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))
     }
 
     private func checkHazardContact(for piece: PieceNode) {
         guard CACurrentMediaTime() - lastHazardHit > 1.0 else { return }
-        let pieceRect = collisionRect(for: piece, at: piece.position)
-        guard let index = level.obstacles.firstIndex(where: { $0.isHazard && obstacleSceneRect($0).intersects(pieceRect) })
+        let polygon = piece.collisionPolygon(at: piece.position)
+        guard let index = level.obstacles.firstIndex(where: { $0.isHazard && polygonIntersectsRect(polygon, obstacleSceneRect($0)) })
         else { return }
         lastHazardHit = CACurrentMediaTime()
         if index < obstacleNodes.count {
