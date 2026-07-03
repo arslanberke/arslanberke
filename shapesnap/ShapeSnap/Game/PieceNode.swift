@@ -231,15 +231,22 @@ final class PieceNode: SKNode {
 
     /// Brief green confirmation so the player knows the piece is locked in.
     func showPlacedConfirmation() {
-        let original = body.strokeColor
-        let originalWidth = body.lineWidth
-        body.strokeColor = UIColor.systemGreen
-        body.lineWidth = 3
-        let shape = body
-        run(.sequence([.wait(forDuration: 0.5), .run {
-            shape.strokeColor = original
-            shape.lineWidth = originalWidth
-        }]))
+        guard let path = body.path else { return }
+        let glow = SKShapeNode(path: path)
+        glow.fillColor = .clear
+        glow.strokeColor = UIColor.systemGreen.withAlphaComponent(0.35)
+        glow.lineWidth = 4
+        glow.lineJoin = .round
+        glow.lineCap = .round
+        glow.glowWidth = 8
+        glow.zPosition = 5
+        glow.xScale = body.xScale
+        addChild(glow)
+        glow.run(.sequence([
+            .wait(forDuration: 0.35),
+            .fadeOut(withDuration: 0.35),
+            .removeFromParent(),
+        ]))
     }
 
     func startBlinking() {
