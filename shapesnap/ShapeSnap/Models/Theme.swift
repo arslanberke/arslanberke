@@ -65,6 +65,17 @@ final class GameSettings: ObservableObject {
     @AppStorage("settings.highContrast") var highContrast = false
     @AppStorage("settings.largePieceHandles") var largePieceHandles = false
     @AppStorage("settings.colorBlindPatterns") var colorBlindPatterns = false
+    @AppStorage("settings.developerMode") var developerMode = false
+    @AppStorage("settings.seenMechanics") var seenMechanicsRaw = ""
+
+    func hasSeenMechanic(_ mechanic: Mechanic) -> Bool {
+        seenMechanicsRaw.split(separator: ",").contains(Substring(mechanic.rawValue))
+    }
+
+    func markMechanicSeen(_ mechanic: Mechanic) {
+        guard !hasSeenMechanic(mechanic) else { return }
+        seenMechanicsRaw += seenMechanicsRaw.isEmpty ? mechanic.rawValue : ",\(mechanic.rawValue)"
+    }
 
     var appearance: Appearance {
         get { Appearance(rawValue: appearanceRaw) ?? .system }

@@ -31,6 +31,7 @@ final class GameScene: SKScene {
     private var activePiece: PieceNode?
     private var dragOffset: CGPoint = .zero
     private var lastHazardHit: CFTimeInterval = 0
+    private weak var lastTouchedPiece: PieceNode?
     private var placedCount = 0
     private var accuracySamples: [Double] = []
     private var boardAngle: CGFloat = 0
@@ -147,7 +148,7 @@ final class GameScene: SKScene {
         for obstacle in level.obstacles {
             let rect = obstacleSceneRect(obstacle)
             let node = SKShapeNode(rect: CGRect(origin: CGPoint(x: -rect.width / 2, y: -rect.height / 2),
-                                                size: rect.size), cornerRadius: rect.height / 2)
+                                                size: rect.size), cornerRadius: min(rect.width, rect.height) / 2)
             node.position = CGPoint(x: rect.midX, y: rect.midY)
             if obstacle.isHazard {
                 node.fillColor = UIColor.systemRed.withAlphaComponent(0.85)
@@ -231,6 +232,7 @@ final class GameScene: SKScene {
         }
 
         activePiece = node
+        lastTouchedPiece = node
         dragOffset = CGPoint(x: node.position.x - location.x, y: node.position.y - location.y)
         node.beginDrag()
         HapticsManager.shared.soft()
@@ -271,17 +273,22 @@ final class GameScene: SKScene {
     /// shrunken piece fits through gaps a grown one cannot.
     private func movementAllowed(for piece: PieceNode, to position: CGPoint) -> Bool {
         guard !level.obstacles.isEmpty else { return true }
-        let radius = piece.collisionRadius
-        let pieceRect = CGRect(x: position.x - radius, y: position.y - radius,
-                               width: radius * 2, height: radius * 2)
+        let pieceRect = collisionRect(for: piece, at: position)
         return !level.obstacles.contains { !$0.isHazard && obstacleSceneRect($0).intersects(pieceRect) }
+    }
+
+    /// Scene-space bounding box of the piece as actually rendered (rotation,
+    /// flip and pulsing scale included), slightly inset so collisions match
+    /// what the player sees instead of an oversized invisible box.
+    private func collisionRect(for piece: PieceNode, at position: CGPoint) -> CGRect {
+        var frame = piece.calculateAccumulatedFrame()
+        frame = frame.insetBy(dx: frame.width * 0.12, dy: frame.height * 0.12)
+        return frame.offsetBy(dx: position.x - piece.position.x, dy: position.y - piece.position.y)
     }
 
     private func checkHazardContact(for piece: PieceNode) {
         guard CACurrentMediaTime() - lastHazardHit > 1.0 else { return }
-        let radius = piece.collisionRadius
-        let pieceRect = CGRect(x: piece.position.x - radius, y: piece.position.y - radius,
-                               width: radius * 2, height: radius * 2)
+        let pieceRect = collisionRect(for: piece, at: piece.position)
         guard let index = level.obstacles.firstIndex(where: { $0.isHazard && obstacleSceneRect($0).intersects(pieceRect) })
         else { return }
         lastHazardHit = CACurrentMediaTime()
@@ -321,8 +328,16 @@ final class GameScene: SKScene {
 
     /// Called by gesture recognizers in the hosting view.
     func rotateActiveOrNearest() {
-        guard let piece = pieceNodes.first(where: { !$0.isPlaced && $0.canBeMoved }) else { return }
+        guard let piece = controllablePiece() else { return }
         rotate(piece: piece)
+    }
+
+    /// The piece rotate/flip should act on: the one being dragged, otherwise
+    /// the last one the player touched, otherwise the first unplaced piece.
+    private func controllablePiece() -> PieceNode? {
+        if let piece = activePiece, !piece.isPlaced, piece.canBeMoved { return piece }
+        if let piece = lastTouchedPiece, !piece.isPlaced, piece.canBeMoved { return piece }
+        return pieceNodes.first(where: { !$0.isPlaced && $0.canBeMoved })
     }
 
     func rotate(piece: PieceNode) {
@@ -334,7 +349,7 @@ final class GameScene: SKScene {
     }
 
     func flipActivePiece() {
-        guard let piece = activePiece ?? pieceNodes.first(where: { !$0.isPlaced && $0.canBeMoved }) else { return }
+        guard let piece = controllablePiece() else { return }
         piece.currentFlipped.toggle()
         piece.run(.scaleX(to: piece.currentFlipped ? -1 : 1, duration: 0.18))
         gameDelegate?.sceneDidUseMove()

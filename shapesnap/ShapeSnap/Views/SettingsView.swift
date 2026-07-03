@@ -38,6 +38,7 @@ struct SettingsView: View {
             }
 
             Section("Developer") {
+                Toggle("Developer mode (level skip arrows)", isOn: $settings.developerMode)
                 Button("Unlock all levels") {
                     progress.highestUnlockedLevel = LevelCatalog.totalLevels
                 }

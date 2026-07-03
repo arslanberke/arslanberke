@@ -39,6 +39,25 @@ enum Mechanic: String, Codable, CaseIterable, Identifiable {
         }
     }
 
+    var detail: String {
+        switch self {
+        case .none: return "Drag the piece into the matching outline."
+        case .rotatingBoard: return "The whole board keeps turning. Time your placement!"
+        case .gravity: return "Pieces fall down. Catch and guide them into place."
+        case .frozen: return "Frozen pieces can only be moved once — make it count."
+        case .locked: return "Tap a locked piece to break the lock before moving it."
+        case .teleporter: return "Drag a piece into a portal to warp it across the board."
+        case .magnetic: return "Magnetic pieces pull each other — plan your path."
+        case .mirrorControls: return "Controls are mirrored: dragging left moves right!"
+        case .invisible: return "Some pieces fade in and out. Track them while visible."
+        case .shapeShifting: return "These pieces morph between shapes. Place the right form."
+        case .multiLayer: return "Two stacked layers — solve both to finish."
+        case .movingTargets: return "The outlines drift around. Land the piece on the move."
+        case .darkness: return "The board is dark — your finger lights the way."
+        case .pulsing: return "Pieces grow and shrink. Slip through gaps while small!"
+        }
+    }
+
     var symbolName: String {
         switch self {
         case .none: return "square.on.square"

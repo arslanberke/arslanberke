@@ -77,10 +77,21 @@ enum LevelGenerator {
         switch world.id {
         case 1: return .none
         case 2: return .none                       // multiple pieces handled by piece count
-        case 10:                                    // mixed mechanics world
+        case 10:
+            // Gauntlet: gentle re-introduction, then a curated escalation so the
+            // final world feels designed rather than random.
             var rng = SeededRandom(seed: seed)
-            let pool = Mechanic.allCases.filter { $0 != .none }
-            return index <= 5 ? .none : pool.randomElement(using: &rng)!
+            switch index {
+            case ...5: return .none
+            case ...20:   // one familiar mechanic at a time
+                return [Mechanic.rotatingBoard, .gravity, .locked, .teleporter,
+                        .invisible, .movingTargets].randomElement(using: &rng)!
+            case ...50:   // trickier board mechanics join the pool
+                return [Mechanic.rotatingBoard, .gravity, .teleporter, .mirrorControls,
+                        .movingTargets, .darkness, .magnetic].randomElement(using: &rng)!
+            default:      // final stretch: anything goes
+                return Mechanic.allCases.filter { $0 != .none }.randomElement(using: &rng)!
+            }
         default:
             // introduce each world's mechanic gradually: first few levels classic
             return index <= 3 ? .none : world.mechanic
@@ -104,20 +115,26 @@ enum LevelGenerator {
         let pulsing = (world >= 5 || world == 0) && difficulty > 0.45 && index % 4 == 0
         // Decide up-front whether this level has obstacle bars so targets can be
         // pushed to the top of the board, keeping bars between spawn and target.
-        let hasObstacles = (world == 1 && index > 10) || (world != 1 && difficulty > 0.4 && index % 2 == 0)
+        let hasObstacles = (world == 1 && index > 10) || (world == 10 && index % 5 != 1)
+            || (world != 1 && world != 10 && difficulty > 0.4 && index % 2 == 0)
 
         var pieces: [PieceDefinition] = []
         var usedTargets: [CGPoint] = []
         for pieceIndex in 0..<pieceCount {
-            let shape = shapePool(difficulty: difficulty).randomElement(using: &rng)!
+            // When a flip is called for, force a chiral shape so the mirrored
+            // silhouette is visually distinguishable — flips on symmetric shapes
+            // are meaningless.
+            let wantsFlip = allowFlip && Bool.random(using: &rng)
+            let shape = wantsFlip
+                ? [PieceShape.rightTriangle, .lShape, .zShape].randomElement(using: &rng)!
+                : shapePool(difficulty: difficulty).randomElement(using: &rng)!
             let size = CGFloat(Double.random(in: 0.16...0.30, using: &rng)) * (isBoss ? 0.85 : 1.0)
             let target = placeTarget(avoiding: usedTargets, size: size,
                                      yRange: hasObstacles ? 0.6...0.88 : 0.35...0.85, rng: &rng)
             usedTargets.append(target)
 
             let targetRotation = allowRotation ? Int.random(in: 0...3, using: &rng) : 0
-            // Only require flips on shapes where a flip is visually distinguishable.
-            let targetFlipped = allowFlip && !shape.isFlipSymmetric && Bool.random(using: &rng)
+            let targetFlipped = wantsFlip
 
             var pieceMechanics: [Mechanic] = []
             if mechanic == .frozen || mechanic == .locked || mechanic == .invisible ||
@@ -126,6 +143,11 @@ enum LevelGenerator {
                 if pieceIndex % 2 == 0 || pieceCount == 1 { pieceMechanics.append(mechanic) }
             }
             if pulsing { pieceMechanics.append(.pulsing) }
+            // World 10 finale: layer a second piece mechanic on top from level 40.
+            if world == 10 && index > 40 && pieceIndex % 2 == 1 {
+                let extra = [Mechanic.frozen, .invisible, .pulsing].randomElement(using: &rng)!
+                if !pieceMechanics.contains(extra) { pieceMechanics.append(extra) }
+            }
 
             pieces.append(PieceDefinition(
                 id: pieceIndex,
@@ -199,6 +221,11 @@ enum LevelGenerator {
             guard index > 10 else { return [] }
             barRows = min(3, 1 + (index - 11) / 15)
             corridor = index >= 25 && index % 5 == 0
+        } else if world == 10 {
+            // Gauntlet: obstacles on almost every level, ramping in density.
+            guard index % 5 != 1 else { return [] }   // occasional breather
+            barRows = min(4, 1 + index / 25)
+            corridor = index % 4 == 0
         } else {
             guard difficulty > 0.4, index % 2 == 0 else { return [] }
             barRows = Int.random(in: 1...2, using: &rng)
@@ -268,6 +295,26 @@ enum LevelGenerator {
                     obstacles += row(y: y, gapCenter: gapCenter, hazard: hazard)
                     break
                 }
+            }
+        }
+
+        // Later content also gets a vertical bar with a gap, making the field a maze.
+        if (world == 10 || difficulty > 0.65) && bandTop - bandBottom > 0.12 && Bool.random(using: &rng) {
+            let x = board.minX + board.width * CGFloat(Double.random(in: 0.3...0.7, using: &rng))
+            let gapH = max(pieceH * 1.6, 0.14)
+            let gapCenterY = bandBottom + (bandTop - bandBottom) * CGFloat(Double.random(in: 0.3...0.7, using: &rng))
+            let bottomEnd = max(bandBottom, gapCenterY - gapH / 2)
+            let topStart = min(bandTop, gapCenterY + gapH / 2)
+            let hazard = hazardAllowed && Double.random(in: 0...1, using: &rng) < 0.35
+            if bottomEnd - bandBottom > 0.03 {
+                obstacles.append(Obstacle(center: CGPoint(x: x, y: (bandBottom + bottomEnd) / 2),
+                                          size: CGSize(width: 0.035, height: bottomEnd - bandBottom),
+                                          isHazard: hazard))
+            }
+            if bandTop - topStart > 0.03 {
+                obstacles.append(Obstacle(center: CGPoint(x: x, y: (topStart + bandTop) / 2),
+                                          size: CGSize(width: 0.035, height: bandTop - topStart),
+                                          isHazard: hazard))
             }
         }
         return obstacles

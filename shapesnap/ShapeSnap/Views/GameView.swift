@@ -5,8 +5,10 @@ struct GameView: View {
     @StateObject var session: GameSession
     @EnvironmentObject var progress: PlayerProgress
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var settings = GameSettings.shared
     @State private var scene: GameScene?
     @State private var sceneID = UUID()
+    @State private var introMechanic: Mechanic?
 
     var body: some View {
         GeometryReader { proxy in
@@ -38,6 +40,14 @@ struct GameView: View {
                                    onRetry: retry,
                                    onExit: { dismiss() })
                         .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                }
+
+                if let mechanic = introMechanic {
+                    MechanicIntroOverlay(mechanic: mechanic) {
+                        settings.markMechanicSeen(mechanic)
+                        withAnimation { introMechanic = nil }
+                    }
+                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
                 }
             }
             .onAppear { buildScene(size: proxy.size) }
@@ -122,13 +132,43 @@ struct GameView: View {
 
     private var controls: some View {
         HStack(spacing: 16) {
+            if settings.developerMode && isStoryLike {
+                Button { jump(by: -1) } label: {
+                    ControlIcon(systemName: "chevron.left", label: "Prev")
+                }
+            }
             Button { scene?.rotateActiveOrNearest() } label: {
                 ControlIcon(systemName: "rotate.right.fill", label: "Rotate")
             }
-            Button { scene?.flipActivePiece() } label: {
-                ControlIcon(systemName: "arrow.left.and.right.righttriangle.left.righttriangle.right.fill", label: "Flip")
+            if levelNeedsFlip {
+                Button { scene?.flipActivePiece() } label: {
+                    ControlIcon(systemName: "arrow.left.and.right.righttriangle.left.righttriangle.right.fill", label: "Flip")
+                }
+            }
+            if settings.developerMode && isStoryLike {
+                Button { jump(by: 1) } label: {
+                    ControlIcon(systemName: "chevron.right", label: "Next")
+                }
             }
         }
+    }
+
+    private var isStoryLike: Bool {
+        session.mode == .story || session.mode == .hardcore || session.mode == .relax
+    }
+
+    private var levelNeedsFlip: Bool {
+        session.level.pieces.contains { !$0.shape.isFlipSymmetric }
+    }
+
+    private func jump(by delta: Int) {
+        guard isStoryLike, let level = LevelCatalog.shared.level(id: session.level.id + delta) else { return }
+        session.phase = .playing
+        session.moves = 0
+        session.elapsed = 0
+        session.placedPieces = 0
+        session.setLevel(level)
+        buildScene(size: scene?.size ?? .zero)
     }
 
     private func buildScene(size: CGSize) {
@@ -139,6 +179,9 @@ struct GameView: View {
         scene = newScene
         sceneID = UUID()
         session.onNextLevel = { _ in buildScene(size: size) }
+        if let unseen = session.level.mechanicSummary.first(where: { !GameSettings.shared.hasSeenMechanic($0) }) {
+            introMechanic = unseen
+        }
     }
 
     private func goToNextLevel() {
@@ -157,6 +200,42 @@ struct GameView: View {
         session.elapsed = 0
         session.placedPieces = 0
         buildScene(size: scene?.size ?? .zero)
+    }
+}
+
+/// Full-screen card introducing a mechanic the first time it appears,
+/// with an animated SF Symbol — zero bundled video/assets.
+struct MechanicIntroOverlay: View {
+    let mechanic: Mechanic
+    let onDismiss: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.4).ignoresSafeArea()
+            VStack(spacing: 20) {
+                Text("New Mechanic!")
+                    .font(.caption.weight(.bold))
+                    .textCase(.uppercase)
+                    .foregroundStyle(.secondary)
+                Image(systemName: mechanic.symbolName)
+                    .font(.system(size: 64, weight: .medium))
+                    .foregroundStyle(Color.accent)
+                    .symbolEffect(.bounce.up.byLayer, options: .repeating.speed(0.5))
+                    .frame(height: 90)
+                Text(mechanic.displayName)
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                Text(mechanic.detail)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                Button("Let's Go!") { onDismiss() }
+                    .buttonStyle(PrimaryButtonStyle())
+            }
+            .padding(28)
+            .frame(maxWidth: 340)
+            .card(cornerRadius: 32)
+            .padding(24)
+        }
     }
 }
 
