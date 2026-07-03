@@ -71,7 +71,7 @@ struct HomeView: View {
                 Text("World \(world.id) · \(world.name)")
                     .font(.subheadline)
                     .foregroundStyle(.white.opacity(0.85))
-                ProgressView(value: Double(levelID - world.firstLevelID), total: Double(world.levelCount))
+                ProgressView(value: Double(min(max(levelID - world.firstLevelID, 0), world.levelCount)), total: Double(world.levelCount))
                     .tint(.white)
             }
             .padding(24)
