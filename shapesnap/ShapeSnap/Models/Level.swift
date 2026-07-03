@@ -106,7 +106,7 @@ enum PieceShape: String, Codable, CaseIterable {
 }
 
 /// One puzzle piece within a level.
-struct PieceDefinition: Codable, Identifiable, Hashable {
+struct PieceDefinition: Codable, Identifiable {
     var id: Int
     var shape: PieceShape
     var size: CGFloat                 // side length in normalized board units (0...1)
@@ -129,13 +129,13 @@ struct PieceDefinition: Codable, Identifiable, Hashable {
 }
 
 /// A pair of portals for teleporter levels, normalized coordinates.
-struct PortalPair: Codable, Hashable {
+struct PortalPair: Codable {
     var entry: CGPoint
     var exit: CGPoint
 }
 
 /// Fully describes a single playable level.
-struct LevelDefinition: Codable, Identifiable, Hashable {
+struct LevelDefinition: Codable, Identifiable {
     var id: Int                       // global level number, 1-based
     var world: Int
     var indexInWorld: Int             // 1-based within the world

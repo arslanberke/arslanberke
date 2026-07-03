@@ -55,7 +55,7 @@ final class PieceNode: SKNode {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    func contains(_ scenePoint: CGPoint) -> Bool {
+    func containsTouch(at scenePoint: CGPoint) -> Bool {
         guard let scene else { return false }
         let local = convert(scenePoint, from: scene)
         let touchScale: CGFloat = GameSettings.shared.largePieceHandles ? 1.5 : 1.15

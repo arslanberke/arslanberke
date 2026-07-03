@@ -161,7 +161,7 @@ final class GameScene: SKScene {
         revealDarkness(at: location)
 
         guard let node = pieceNodes
-            .filter({ !$0.isPlaced && $0.contains(location) && $0.canBeMoved })
+            .filter({ !$0.isPlaced && $0.containsTouch(at: location) && $0.canBeMoved })
             .max(by: { $0.zPosition < $1.zPosition }) else { return }
 
         if node.definition.mechanics.contains(.locked) && node.isLocked {

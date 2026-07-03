@@ -230,9 +230,11 @@ struct ResultsOverlay: View {
                             .foregroundStyle(.secondary)
                     }
                 } else {
-                    Text("Out of Moves")
+                    Text(session.mode == .timeAttack ? "Time's Up!" : "Out of Moves")
                         .font(.system(size: 30, weight: .bold, design: .rounded))
-                    Text("Hardcore mode allows only \(session.moveLimit ?? 0) moves.")
+                    Text(session.mode == .timeAttack
+                         ? "Puzzles solved: \(session.sessionScore)"
+                         : "Hardcore mode allows only \(session.moveLimit ?? 0) moves.")
                         .font(.subheadline).foregroundStyle(.secondary)
                     Button("Try Again") { onRetry() }
                         .buttonStyle(PrimaryButtonStyle(color: .red))
