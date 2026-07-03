@@ -35,8 +35,8 @@ final class GameScene: SKScene {
 
     private var snapDistance: CGFloat { min(size.width, size.height) * 0.06 }
     private var boardRect: CGRect {
-        CGRect(x: size.width * 0.06, y: size.height * 0.24,
-               width: size.width * 0.88, height: size.height * 0.62)
+        CGRect(x: size.width * BoardLayout.rect.minX, y: size.height * BoardLayout.rect.minY,
+               width: size.width * BoardLayout.rect.width, height: size.height * BoardLayout.rect.height)
     }
 
     init(level: LevelDefinition, theme: Theme, size: CGSize) {

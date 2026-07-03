@@ -174,42 +174,75 @@ enum LevelGenerator {
                                parMoves: parMoves, parTime: parTime, isBoss: isBoss, branch: branch)
     }
 
-    /// Thin bars the player must slide pieces around. In World 1 they appear from
+    /// Thin bars the player must slide pieces around, always confined to the
+    /// board area and kept clear of target sockets. In World 1 they appear from
     /// level 11 (after the pure-drag tutorial) and grow in number; later worlds
-    /// sprinkle them in at higher difficulty. Bars are placed as a pair with a gap.
+    /// sprinkle them in at higher difficulty. Some levels form a zigzag corridor
+    /// with alternating gaps so the piece must travel a winding path.
     private static func makeObstacles(world: Int, index: Int, difficulty: Double,
                                       targets: [CGPoint], pieces: [PieceDefinition],
                                       rng: inout SeededRandom) -> [Obstacle] {
-        let count: Int
+        let barRows: Int
+        var corridor = false
         if world == 1 {
             guard index > 10 else { return [] }
-            count = min(3, 1 + (index - 11) / 15)
-        } else if world >= 2 || world == 0 {
-            guard difficulty > 0.4, index % 2 == 0 else { return [] }
-            count = Int.random(in: 1...2, using: &rng)
+            barRows = min(3, 1 + (index - 11) / 15)
+            corridor = index >= 25 && index % 5 == 0
         } else {
-            return []
+            guard difficulty > 0.4, index % 2 == 0 else { return [] }
+            barRows = Int.random(in: 1...2, using: &rng)
+            corridor = index % 6 == 0
+        }
+
+        let board = BoardLayout.rect
+        let maxPieceSize = pieces.map(\.size).max() ?? 0.2
+        // approximate piece extents in scene-normalized units
+        let pieceW = maxPieceSize * board.width * 0.75
+        let pieceH = maxPieceSize * board.height * 0.75
+        // targets are board-normalized; convert to scene-normalized
+        let sceneTargets = targets.map {
+            CGPoint(x: board.minX + $0.x * board.width, y: board.minY + $0.y * board.height)
+        }
+        let thickness: CGFloat = 0.018
+        let gapWidth = max(pieceW * 1.6, 0.24)
+
+        func row(y: CGFloat, gapCenter: CGFloat) -> [Obstacle] {
+            var bars: [Obstacle] = []
+            let leftEnd = max(board.minX, gapCenter - gapWidth / 2)
+            let rightStart = min(board.maxX, gapCenter + gapWidth / 2)
+            if leftEnd - board.minX > 0.03 {
+                bars.append(Obstacle(center: CGPoint(x: (board.minX + leftEnd) / 2, y: y),
+                                     size: CGSize(width: leftEnd - board.minX, height: thickness)))
+            }
+            if board.maxX - rightStart > 0.03 {
+                bars.append(Obstacle(center: CGPoint(x: (rightStart + board.maxX) / 2, y: y),
+                                     size: CGSize(width: board.maxX - rightStart, height: thickness)))
+            }
+            return bars
         }
 
         var obstacles: [Obstacle] = []
-        let maxPieceSize = pieces.map(\.size).max() ?? 0.2
-        for _ in 0..<count {
-            for _ in 0..<25 {   // find a bar row that keeps a passable gap and avoids targets
-                let y = CGFloat(Double.random(in: 0.32...0.72, using: &rng))
-                let gapWidth = maxPieceSize * CGFloat(Double.random(in: 1.25...1.7, using: &rng))
-                let gapCenter = CGFloat(Double.random(in: 0.25...0.75, using: &rng))
-                let thickness: CGFloat = 0.035
-                let left = Obstacle(center: CGPoint(x: (gapCenter - gapWidth / 2) / 2, y: y),
-                                    size: CGSize(width: gapCenter - gapWidth / 2, height: thickness))
-                let right = Obstacle(center: CGPoint(x: (gapCenter + gapWidth / 2 + 1) / 2, y: y),
-                                     size: CGSize(width: 1 - gapCenter - gapWidth / 2, height: thickness))
-                let clearsTargets = targets.allSatisfy { target in
-                    abs(target.y - y) > maxPieceSize * 0.8
-                }
-                let clearsExisting = obstacles.allSatisfy { abs($0.center.y - y) > 0.12 }
+
+        if corridor {
+            // Alternating gaps (left, right, left) force a winding path upward.
+            for i in 0..<3 {
+                let y = board.minY + board.height * (0.24 + CGFloat(i) * 0.24)
+                guard sceneTargets.allSatisfy({ abs($0.y - y) > pieceH * 0.9 }) else { continue }
+                let gapCenter = i % 2 == 0 ? board.minX + board.width * 0.2
+                                           : board.maxX - board.width * 0.2
+                obstacles += row(y: y, gapCenter: gapCenter)
+            }
+            return obstacles
+        }
+
+        for _ in 0..<barRows {
+            for _ in 0..<25 {   // find a bar row that avoids sockets and other bars
+                let y = board.minY + board.height * CGFloat(Double.random(in: 0.2...0.8, using: &rng))
+                let gapCenter = board.minX + board.width * CGFloat(Double.random(in: 0.2...0.8, using: &rng))
+                let clearsTargets = sceneTargets.allSatisfy { abs($0.y - y) > pieceH * 0.9 }
+                let clearsExisting = obstacles.allSatisfy { abs($0.center.y - y) > 0.09 }
                 if clearsTargets && clearsExisting {
-                    obstacles.append(left)
-                    obstacles.append(right)
+                    obstacles += row(y: y, gapCenter: gapCenter)
                     break
                 }
             }

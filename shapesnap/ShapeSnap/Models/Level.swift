@@ -154,6 +154,13 @@ struct PieceDefinition: Codable, Identifiable {
     var requiresFlip: Bool { !shape.isFlipSymmetric && targetFlipped != spawnFlipped }
 }
 
+/// The board's placement within the scene, in scene-normalized (0...1) units.
+/// Shared by the renderer and the level generator so obstacles and sockets
+/// agree on the same coordinate space.
+enum BoardLayout {
+    static let rect = CGRect(x: 0.06, y: 0.24, width: 0.88, height: 0.62)
+}
+
 /// A static wall the player must maneuver pieces around, normalized coordinates.
 struct Obstacle: Codable {
     var center: CGPoint
