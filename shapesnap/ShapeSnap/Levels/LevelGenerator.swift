@@ -90,7 +90,7 @@ enum LevelGenerator {
                 return [Mechanic.rotatingBoard, .gravity, .teleporter, .mirrorControls,
                         .movingTargets, .darkness, .magnetic].randomElement(using: &rng)!
             default:      // final stretch: anything goes
-                return Mechanic.allCases.filter { $0 != .none }.randomElement(using: &rng)!
+                return Mechanic.allCases.filter { $0 != .none && $0 != .frozen }.randomElement(using: &rng)!
             }
         default:
             // introduce each world's mechanic gradually: first few levels classic
@@ -137,7 +137,7 @@ enum LevelGenerator {
             let targetFlipped = wantsFlip
 
             var pieceMechanics: [Mechanic] = []
-            if mechanic == .frozen || mechanic == .locked || mechanic == .invisible ||
+            if mechanic == .locked || mechanic == .invisible ||
                 mechanic == .magnetic || mechanic == .shapeShifting {
                 // apply piece-level mechanics to roughly half the pieces
                 if pieceIndex % 2 == 0 || pieceCount == 1 { pieceMechanics.append(mechanic) }
@@ -145,7 +145,7 @@ enum LevelGenerator {
             if pulsing { pieceMechanics.append(.pulsing) }
             // World 10 finale: layer a second piece mechanic on top from level 40.
             if world == 10 && index > 40 && pieceIndex % 2 == 1 {
-                let extra = [Mechanic.frozen, .invisible, .pulsing].randomElement(using: &rng)!
+                let extra = [Mechanic.invisible, .pulsing].randomElement(using: &rng)!
                 if !pieceMechanics.contains(extra) { pieceMechanics.append(extra) }
             }
 
@@ -242,7 +242,9 @@ enum LevelGenerator {
             CGPoint(x: board.minX + $0.x * board.width, y: board.minY + $0.y * board.height)
         }
         let thickness: CGFloat = 0.018
-        let gapWidth = max(pieceW * 1.6, 0.24)
+        // Gaps fit the piece at ANY rotation (diagonal + comfortable margin) —
+        // rotation is a placement mechanic, never a squeeze-through puzzle.
+        let gapWidth = max(pieceW * 2.1, 0.26)
         // Bars must sit between the spawn tray (bottom) and the lowest target,
         // like hurdles between the start and the finish line.
         let lowestTargetY = sceneTargets.map(\.y).min() ?? board.maxY
@@ -301,7 +303,7 @@ enum LevelGenerator {
         // Later content also gets a vertical bar with a gap, making the field a maze.
         if (world == 10 || difficulty > 0.65) && bandTop - bandBottom > 0.12 && Bool.random(using: &rng) {
             let x = board.minX + board.width * CGFloat(Double.random(in: 0.3...0.7, using: &rng))
-            let gapH = max(pieceH * 1.6, 0.14)
+            let gapH = max(pieceH * 2.1, 0.18)
             let gapCenterY = bandBottom + (bandTop - bandBottom) * CGFloat(Double.random(in: 0.3...0.7, using: &rng))
             let bottomEnd = max(bandBottom, gapCenterY - gapH / 2)
             let topStart = min(bandTop, gapCenterY + gapH / 2)

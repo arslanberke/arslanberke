@@ -278,7 +278,7 @@ struct ResultsOverlay: View {
                 if session.phase == .completed, let result = session.lastResult {
                     Text(result.rating.displayName)
                         .font(.system(size: 34, weight: .bold, design: .rounded))
-                    StarRow(stars: result.stars, size: 28)
+                    AnimatedStarRow(stars: result.stars, size: 32)
                     Text("\(result.score)%")
                         .font(.system(size: 52, weight: .heavy, design: .rounded))
                         .foregroundStyle(Color.accent)

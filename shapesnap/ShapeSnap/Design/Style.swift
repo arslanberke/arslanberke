@@ -70,3 +70,37 @@ struct StarRow: View {
         .accessibilityLabel("\(stars) of 3 stars")
     }
 }
+
+/// Stars fly in one by one with a bouncy pop — used on the results screen.
+struct AnimatedStarRow: View {
+    let stars: Int
+    var size: CGFloat = 28
+    @State private var revealed = 0
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(0..<3, id: \.self) { index in
+                Image(systemName: index < stars ? "star.fill" : "star")
+                    .font(.system(size: size))
+                    .foregroundStyle(index < stars ? Color.coin : Color.secondary.opacity(0.4))
+                    .scaleEffect(index < revealed ? 1 : 0.1)
+                    .opacity(index < revealed ? 1 : 0)
+                    .rotationEffect(.degrees(index < revealed ? 0 : -120))
+            }
+        }
+        .accessibilityLabel("\(stars) of 3 stars")
+        .onAppear {
+            for index in 0..<3 {
+                withAnimation(.spring(response: 0.45, dampingFraction: 0.55)
+                    .delay(0.25 + Double(index) * 0.3)) {
+                    revealed = index + 1
+                }
+                if index < stars {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35 + Double(index) * 0.3) {
+                        HapticsManager.shared.light()
+                    }
+                }
+            }
+        }
+    }
+}

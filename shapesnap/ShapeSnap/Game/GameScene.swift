@@ -124,10 +124,12 @@ final class GameScene: SKScene {
         addChild(projectile)
         projectileNodes.append(projectile)
 
-        let targetX = activePiece?.position.x
+        let rawTargetX = activePiece?.position.x
             ?? pieceNodes.first(where: { !$0.isPlaced })?.position.x
             ?? boardRect.midX
-        let destination = CGPoint(x: targetX, y: -30)
+        // Projectiles never leave the board, so pieces waiting in the tray are safe.
+        let targetX = min(max(rawTargetX, boardRect.minX + 10), boardRect.maxX - 10)
+        let destination = CGPoint(x: targetX, y: boardRect.minY + 6)
         let distance = hypot(destination.x - projectile.position.x, destination.y - projectile.position.y)
         AudioManager.shared.play(.rotate)
         projectile.run(.sequence([
@@ -179,7 +181,7 @@ final class GameScene: SKScene {
         guard level.isBoss, currentTime - lastBossHit > 1.0 else { return }
         projectileNodes.removeAll { $0.parent == nil }
 
-        for piece in pieceNodes where !piece.isPlaced {
+        for piece in pieceNodes where !piece.isPlaced && boardRect.contains(piece.position) {
             let radius = piece.collisionRadius * 0.8
             for projectile in projectileNodes {
                 if hypot(projectile.position.x - piece.position.x,
@@ -203,7 +205,6 @@ final class GameScene: SKScene {
         piece.flashDamage()
         if level.id == LevelCatalog.totalLevels {
             piece.applyCrack()
-            showBadge("crack!", above: piece)
         } else {
             showBadge("-\u{2764}\u{FE0F}", above: piece)
         }
@@ -594,10 +595,7 @@ final class GameScene: SKScene {
             let accuracy = 1.0 - Double(distance / snapDistance) * 0.5
             place(piece, at: socketScenePosition, accuracy: accuracy)
         } else {
-            if piece.definition.mechanics.contains(.frozen) {
-                piece.freezeInPlace()
-                HapticsManager.shared.warning()
-            } else if distance <= snapDistance * 2 {
+            if distance <= snapDistance * 2 {
                 // Dropped in the right spot but wrong orientation: tell the player
                 // exactly what is missing instead of a silent reject.
                 if !(rotationMatches && flipMatches), let text = orientationHintText(for: piece) {
@@ -626,6 +624,7 @@ final class GameScene: SKScene {
         piece.zRotation = CGFloat(((piece.definition.targetRotation + rotationOffsetFromBoard()) % 4)) * .pi / 2
         piece.alpha = 1
         piece.emitSnapParticles(theme: theme)
+        piece.showPlacedConfirmation()
 
         placedCount += 1
         accuracySamples.append(accuracy)

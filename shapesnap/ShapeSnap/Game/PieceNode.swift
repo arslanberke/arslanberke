@@ -15,9 +15,8 @@ final class PieceNode: SKNode {
     private let shadow: SKShapeNode
     private let unit: CGFloat
     private var lockIcon: SKLabelNode?
-    private var frozen = false
 
-    var canBeMoved: Bool { !frozen && !isPlaced }
+    var canBeMoved: Bool { !isPlaced }
 
     /// Approximate radius for obstacle/collectible collision, honoring the
     /// current animated scale (pulsing pieces shrink/grow their footprint).
@@ -71,11 +70,6 @@ final class PieceNode: SKNode {
         super.init()
         addChild(shadow)
         addChild(body)
-
-        if definition.mechanics.contains(.frozen) {
-            body.strokeColor = UIColor.cyan
-            body.lineWidth = 3
-        }
 
         if definition.spawnFlipped {
             body.xScale = -1
@@ -163,17 +157,74 @@ final class PieceNode: SKNode {
                        .moveBy(x: 6, y: 0, duration: 0.04)]))
     }
 
-    /// Final-boss damage: the piece visibly cracks and stays scarred.
+    /// Final-boss damage: a chunk visibly breaks off — a shard flies away and
+    /// a jagged crack stays on the piece.
     func applyCrack() {
-        body.alpha = max(0.6, body.alpha - 0.15)
-        body.strokeColor = UIColor.systemRed.withAlphaComponent(0.9)
-        body.lineWidth = 2.5
+        let extent = max(body.frame.width, body.frame.height) / 2
+        let origin = CGPoint(x: CGFloat.random(in: -extent * 0.5...extent * 0.5),
+                             y: CGFloat.random(in: -extent * 0.5...extent * 0.5))
+
+        let crackPath = CGMutablePath()
+        crackPath.move(to: origin)
+        var point = origin
+        for _ in 0..<3 {
+            point = CGPoint(x: point.x + CGFloat.random(in: -extent * 0.35...extent * 0.35),
+                            y: point.y + CGFloat.random(in: -extent * 0.35...extent * 0.35))
+            crackPath.addLine(to: point)
+        }
+        let crack = SKShapeNode(path: crackPath)
+        crack.strokeColor = UIColor.black.withAlphaComponent(0.55)
+        crack.lineWidth = 2
+        crack.zPosition = 2
+        addChild(crack)
+
+        let shardSize = extent * 0.35
+        let shardPath = CGMutablePath()
+        shardPath.addLines(between: [CGPoint(x: 0, y: shardSize),
+                                     CGPoint(x: shardSize * 0.8, y: -shardSize * 0.5),
+                                     CGPoint(x: -shardSize * 0.7, y: -shardSize * 0.4)])
+        shardPath.closeSubpath()
+        let shard = SKShapeNode(path: shardPath)
+        shard.fillColor = body.fillColor
+        shard.strokeColor = .clear
+        shard.position = origin
+        shard.zPosition = 3
+        addChild(shard)
+        let direction = CGVector(dx: CGFloat.random(in: -60...60), dy: CGFloat.random(in: 40...90))
+        shard.run(.group([
+            .move(by: direction, duration: 0.7),
+            .rotate(byAngle: CGFloat.random(in: -3...3), duration: 0.7),
+            .fadeOut(withDuration: 0.7),
+        ])) { shard.removeFromParent() }
+
+        body.alpha = max(0.65, body.alpha - 0.1)
     }
 
-    func freezeInPlace() {
-        frozen = true
-        body.fillColor = body.fillColor.withAlphaComponent(0.5)
-        body.strokeColor = UIColor.cyan.withAlphaComponent(0.9)
+    /// Brief green confirmation so the player knows the piece is locked in.
+    func showPlacedConfirmation() {
+        let original = body.strokeColor
+        let originalWidth = body.lineWidth
+        body.strokeColor = UIColor.systemGreen
+        body.lineWidth = 3
+        let check = SKLabelNode(text: "\u{2713}")
+        check.fontName = "AvenirNext-Bold"
+        check.fontSize = 22
+        check.fontColor = .systemGreen
+        check.verticalAlignmentMode = .center
+        check.zPosition = 4
+        check.setScale(0.1)
+        addChild(check)
+        check.run(.sequence([
+            .scale(to: 1.0, duration: 0.18),
+            .wait(forDuration: 0.5),
+            .fadeOut(withDuration: 0.25),
+            .removeFromParent(),
+        ]))
+        let shape = body
+        run(.sequence([.wait(forDuration: 0.9), .run {
+            shape.strokeColor = original
+            shape.lineWidth = originalWidth
+        }]))
     }
 
     func startBlinking() {
