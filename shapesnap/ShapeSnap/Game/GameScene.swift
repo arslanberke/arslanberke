@@ -44,7 +44,7 @@ final class GameScene: SKScene {
     private var snapDistance: CGFloat {
         let base = min(size.width, size.height) * 0.075
         // Moving targets are harder to hit, so give them a wider snap window.
-        return level.boardMechanics.contains(.movingTargets) ? base * 1.6 : base
+        return level.boardMechanics.contains(.movingTargets) ? base * 1.8 : base
     }
     private var boardRect: CGRect {
         CGRect(x: size.width * BoardLayout.rect.minX, y: size.height * BoardLayout.rect.minY,
