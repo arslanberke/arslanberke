@@ -156,8 +156,7 @@ enum LevelGenerator {
                 targetPosition: target,
                 targetRotation: targetRotation,
                 targetFlipped: targetFlipped,
-                spawnPosition: CGPoint(x: CGFloat(Double.random(in: 0.15...0.85, using: &rng)),
-                                       y: CGFloat(Double.random(in: 0.13...0.20, using: &rng))),
+                spawnPosition: traySlot(index: pieceIndex, count: pieceCount, rng: &rng),
                 spawnRotation: allowRotation ? Int.random(in: 0...3, using: &rng) : 0,
                 spawnFlipped: false,
                 mechanics: pieceMechanics,
@@ -275,9 +274,13 @@ enum LevelGenerator {
 
         var obstacles: [Obstacle] = []
 
+        // Rows must be far enough apart vertically that the piece fits BETWEEN
+        // them at any rotation — otherwise zigzag paths become impassable.
+        let rowSpacing = max(0.1, pieceH * 2.0)
+
         if corridor {
             // Alternating gaps (left, right, left) force a winding path upward.
-            let rows = max(1, min(3, Int((bandTop - bandBottom) / 0.09)))
+            let rows = max(1, min(3, Int((bandTop - bandBottom) / rowSpacing)))
             for i in 0..<rows {
                 let y = bandBottom + (bandTop - bandBottom) * (CGFloat(i) + 0.5) / CGFloat(rows)
                 let gapCenter = i % 2 == 0 ? board.minX + board.width * 0.2
@@ -293,7 +296,7 @@ enum LevelGenerator {
             for _ in 0..<25 {   // find a bar row inside the band, clear of other bars
                 let y = bandBottom + (bandTop - bandBottom) * CGFloat(Double.random(in: 0...1, using: &rng))
                 let gapCenter = board.minX + board.width * CGFloat(Double.random(in: 0.2...0.8, using: &rng))
-                if obstacles.allSatisfy({ abs($0.center.y - y) > 0.08 }) {
+                if obstacles.allSatisfy({ abs($0.center.y - y) > rowSpacing }) {
                     let hazard = hazardAllowed && Double.random(in: 0...1, using: &rng) < 0.35
                     obstacles += row(y: y, gapCenter: gapCenter, hazard: hazard)
                     break
@@ -337,6 +340,17 @@ enum LevelGenerator {
             return Obstacle(center: CGPoint(x: rect.midX, y: rect.midY),
                             size: rect.size, isHazard: obstacle.isHazard)
         }
+    }
+
+    /// Evenly-spaced tray slots so waiting pieces never pile on top of each
+    /// other (or on the Rotate/Flip buttons); rows alternate in height.
+    private static func traySlot(index: Int, count: Int, rng: inout SeededRandom) -> CGPoint {
+        let span = 0.8 - 0.14
+        let x = count == 1
+            ? Double.random(in: 0.3...0.7, using: &rng)
+            : 0.14 + span * Double(index) / Double(count - 1)
+        let y = index % 2 == 0 ? 0.19 : 0.135
+        return CGPoint(x: CGFloat(x + Double.random(in: -0.015...0.015, using: &rng)), y: CGFloat(y))
     }
 
     private static func pieceCount(world: Int, difficulty: Double, isBoss: Bool, rng: inout SeededRandom) -> Int {
