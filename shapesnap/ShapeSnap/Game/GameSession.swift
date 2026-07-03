@@ -20,6 +20,7 @@ final class GameSession: ObservableObject, GameSceneDelegate {
     @Published var lastResult: LevelResult?
     @Published var newAchievements: [Achievement] = []
     @Published var hintsRemaining: Int
+    @Published var bonusCoins = 0                 // collected pickups this level
 
     var moveLimit: Int? { mode.hasMoveLimit ? level.parMoves + 1 : nil }
 
@@ -82,6 +83,13 @@ final class GameSession: ObservableObject, GameSceneDelegate {
     }
 
     nonisolated func sceneDidRejectPiece() {}
+
+    nonisolated func sceneDidCollectBonus() {
+        Task { @MainActor in
+            self.bonusCoins += 15
+            self.progress.coins += 15
+        }
+    }
 
     nonisolated func sceneDidPlacePiece(accuracy: Double, placed: Int, total: Int) {
         Task { @MainActor in
@@ -166,6 +174,7 @@ final class GameSession: ObservableObject, GameSceneDelegate {
     func setLevel(_ newLevel: LevelDefinition) {
         level = newLevel
         hintsRemaining = mode.allowsHints ? 3 : 0
+        bonusCoins = 0
         lastResult = nil
         newAchievements = []
     }

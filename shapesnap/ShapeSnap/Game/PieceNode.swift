@@ -18,6 +18,13 @@ final class PieceNode: SKNode {
 
     var canBeMoved: Bool { !frozen && !isPlaced }
 
+    /// Approximate radius for obstacle/collectible collision, honoring the
+    /// current animated scale (pulsing pieces shrink/grow their footprint).
+    var collisionRadius: CGFloat {
+        let frame = body.frame
+        return max(frame.width, frame.height) / 2 * max(abs(xScale), abs(yScale)) * 0.8
+    }
+
     init(definition: PieceDefinition, theme: Theme, unit: CGFloat) {
         self.definition = definition
         self.currentRotation = definition.spawnRotation
@@ -66,13 +73,17 @@ final class PieceNode: SKNode {
 
     func beginDrag() {
         movesUsed += 1
-        run(.group([.scale(to: 1.06, duration: 0.1)]))
+        if definition.mechanics.contains(.pulsing) == false {
+            run(.scale(to: 1.06, duration: 0.1))
+        }
         zPosition = 40
         shadow.run(.moveBy(x: 0, y: -4, duration: 0.1))
     }
 
     func endDrag() {
-        run(.scale(to: 1.0, duration: 0.1))
+        if definition.mechanics.contains(.pulsing) == false {
+            run(.scale(to: 1.0, duration: 0.1))
+        }
         zPosition = 10
         shadow.run(.moveBy(x: 0, y: 4, duration: 0.1))
     }
@@ -117,6 +128,18 @@ final class PieceNode: SKNode {
             .fadeAlpha(to: 1.0, duration: 0.4),
         ])
         run(.repeatForever(blink), withKey: "blink")
+    }
+
+    /// Rhythmic grow/shrink cycle; time the shrink to slip through obstacle gaps.
+    func startPulsing() {
+        let cycle = SKAction.sequence([
+            .scale(to: 1.35, duration: 1.1),
+            .wait(forDuration: 0.35),
+            .scale(to: 0.7, duration: 1.1),
+            .wait(forDuration: 0.35),
+        ])
+        cycle.timingMode = .easeInEaseOut
+        run(.repeatForever(cycle), withKey: "pulse")
     }
 
     func startShapeShifting() {

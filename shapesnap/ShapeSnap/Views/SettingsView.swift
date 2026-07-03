@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject var settings: GameSettings
+    @EnvironmentObject var progress: PlayerProgress
 
     var body: some View {
         Form {
@@ -34,6 +35,17 @@ struct SettingsView: View {
 
             Section("Game Center") {
                 Button("Leaderboards") { GameCenterService.shared.presentLeaderboards() }
+            }
+
+            Section("Developer") {
+                Button("Unlock all levels") {
+                    progress.highestUnlockedLevel = LevelCatalog.totalLevels
+                }
+                Button("Reset progress", role: .destructive) {
+                    progress.highestUnlockedLevel = 1
+                    progress.results = [:]
+                    progress.totalStars = 0
+                }
             }
 
             Section {

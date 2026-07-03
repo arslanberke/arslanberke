@@ -100,6 +100,8 @@ enum LevelGenerator {
         let pieceCount = pieceCount(world: world, difficulty: difficulty, isBoss: isBoss, rng: &rng)
         let allowRotation = world != 1 && world != 2 || difficulty > 0.35
         let allowFlip = world == 4 || (world >= 7 && difficulty > 0.5) || world == 0
+        // Pulsing timing mechanic appears alongside obstacles in later content.
+        let pulsing = (world >= 5 || world == 0) && difficulty > 0.45 && index % 4 == 0
 
         var pieces: [PieceDefinition] = []
         var usedTargets: [CGPoint] = []
@@ -110,7 +112,8 @@ enum LevelGenerator {
             usedTargets.append(target)
 
             let targetRotation = allowRotation ? Int.random(in: 0...3, using: &rng) : 0
-            let targetFlipped = allowFlip && Bool.random(using: &rng)
+            // Only require flips on shapes where a flip is visually distinguishable.
+            let targetFlipped = allowFlip && !shape.isFlipSymmetric && Bool.random(using: &rng)
 
             var pieceMechanics: [Mechanic] = []
             if mechanic == .frozen || mechanic == .locked || mechanic == .invisible ||
@@ -118,6 +121,7 @@ enum LevelGenerator {
                 // apply piece-level mechanics to roughly half the pieces
                 if pieceIndex % 2 == 0 || pieceCount == 1 { pieceMechanics.append(mechanic) }
             }
+            if pulsing { pieceMechanics.append(.pulsing) }
 
             pieces.append(PieceDefinition(
                 id: pieceIndex,
@@ -127,7 +131,7 @@ enum LevelGenerator {
                 targetRotation: targetRotation,
                 targetFlipped: targetFlipped,
                 spawnPosition: CGPoint(x: CGFloat(Double.random(in: 0.15...0.85, using: &rng)),
-                                       y: CGFloat(Double.random(in: 0.05...0.16, using: &rng))),
+                                       y: CGFloat(Double.random(in: 0.13...0.20, using: &rng))),
                 spawnRotation: allowRotation ? Int.random(in: 0...3, using: &rng) : 0,
                 spawnFlipped: false,
                 mechanics: pieceMechanics,
@@ -138,6 +142,17 @@ enum LevelGenerator {
         var boardMechanics: [Mechanic] = []
         if [.rotatingBoard, .gravity, .mirrorControls, .darkness, .movingTargets, .teleporter, .multiLayer].contains(mechanic) {
             boardMechanics.append(mechanic)
+        }
+
+        let obstacles = makeObstacles(world: world, index: index, difficulty: difficulty,
+                                      targets: usedTargets, pieces: pieces, rng: &rng)
+
+        var collectibles: [CGPoint] = []
+        if index > 15 && index % 3 == 0 {
+            for _ in 0..<Int.random(in: 1...2, using: &rng) {
+                collectibles.append(CGPoint(x: CGFloat(Double.random(in: 0.15...0.85, using: &rng)),
+                                            y: CGFloat(Double.random(in: 0.3...0.8, using: &rng))))
+            }
         }
 
         var portals: [PortalPair] = []
@@ -155,7 +170,51 @@ enum LevelGenerator {
 
         return LevelDefinition(id: id, world: world, indexInWorld: index, seed: seed,
                                pieces: pieces, boardMechanics: boardMechanics, portals: portals,
+                               obstacles: obstacles, collectibles: collectibles,
                                parMoves: parMoves, parTime: parTime, isBoss: isBoss, branch: branch)
+    }
+
+    /// Thin bars the player must slide pieces around. In World 1 they appear from
+    /// level 11 (after the pure-drag tutorial) and grow in number; later worlds
+    /// sprinkle them in at higher difficulty. Bars are placed as a pair with a gap.
+    private static func makeObstacles(world: Int, index: Int, difficulty: Double,
+                                      targets: [CGPoint], pieces: [PieceDefinition],
+                                      rng: inout SeededRandom) -> [Obstacle] {
+        let count: Int
+        if world == 1 {
+            guard index > 10 else { return [] }
+            count = min(3, 1 + (index - 11) / 15)
+        } else if world >= 2 || world == 0 {
+            guard difficulty > 0.4, index % 2 == 0 else { return [] }
+            count = Int.random(in: 1...2, using: &rng)
+        } else {
+            return []
+        }
+
+        var obstacles: [Obstacle] = []
+        let maxPieceSize = pieces.map(\.size).max() ?? 0.2
+        for _ in 0..<count {
+            for _ in 0..<25 {   // find a bar row that keeps a passable gap and avoids targets
+                let y = CGFloat(Double.random(in: 0.32...0.72, using: &rng))
+                let gapWidth = maxPieceSize * CGFloat(Double.random(in: 1.25...1.7, using: &rng))
+                let gapCenter = CGFloat(Double.random(in: 0.25...0.75, using: &rng))
+                let thickness: CGFloat = 0.035
+                let left = Obstacle(center: CGPoint(x: (gapCenter - gapWidth / 2) / 2, y: y),
+                                    size: CGSize(width: gapCenter - gapWidth / 2, height: thickness))
+                let right = Obstacle(center: CGPoint(x: (gapCenter + gapWidth / 2 + 1) / 2, y: y),
+                                     size: CGSize(width: 1 - gapCenter - gapWidth / 2, height: thickness))
+                let clearsTargets = targets.allSatisfy { target in
+                    abs(target.y - y) > maxPieceSize * 0.8
+                }
+                let clearsExisting = obstacles.allSatisfy { abs($0.center.y - y) > 0.12 }
+                if clearsTargets && clearsExisting {
+                    obstacles.append(left)
+                    obstacles.append(right)
+                    break
+                }
+            }
+        }
+        return obstacles
     }
 
     private static func pieceCount(world: Int, difficulty: Double, isBoss: Bool, rng: inout SeededRandom) -> Int {

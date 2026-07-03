@@ -16,6 +16,7 @@ enum Mechanic: String, Codable, CaseIterable, Identifiable {
     case multiLayer         // stacked puzzle layers
     case movingTargets      // target sockets drift continuously
     case darkness           // board is dark, revealed near the finger
+    case pulsing            // pieces rhythmically grow/shrink; pass gaps while small
 
     var id: String { rawValue }
 
@@ -34,6 +35,7 @@ enum Mechanic: String, Codable, CaseIterable, Identifiable {
         case .multiLayer: return "Multi-Layer"
         case .movingTargets: return "Moving Targets"
         case .darkness: return "Darkness"
+        case .pulsing: return "Pulsing Pieces"
         }
     }
 
@@ -52,6 +54,7 @@ enum Mechanic: String, Codable, CaseIterable, Identifiable {
         case .multiLayer: return "square.3.layers.3d"
         case .movingTargets: return "scope"
         case .darkness: return "moon.fill"
+        case .pulsing: return "arrow.up.left.and.down.right.magnifyingglass"
         }
     }
 }
@@ -103,6 +106,23 @@ enum PieceShape: String, Codable, CaseIterable {
             return [.init(x: 0.25, y: 0), .init(x: 0.75, y: 0), .init(x: 1, y: 1), .init(x: 0, y: 1)]
         }
     }
+
+    /// Number of quarter-turn rotations that leave the shape unchanged (4, 2 or 1).
+    var rotationalSymmetry: Int {
+        switch self {
+        case .square, .diamond: return 4
+        case .rectangle, .hexagon, .zShape: return 2
+        default: return 1
+        }
+    }
+
+    /// Whether a horizontal flip leaves the shape unchanged.
+    var isFlipSymmetric: Bool {
+        switch self {
+        case .rightTriangle, .lShape, .zShape: return false
+        default: return true
+        }
+    }
 }
 
 /// One puzzle piece within a level.
@@ -124,8 +144,25 @@ struct PieceDefinition: Codable, Identifiable {
     /// Layer index for multi-layer puzzles (0 = bottom).
     var layer: Int
 
-    var requiresRotation: Bool { targetRotation != spawnRotation }
-    var requiresFlip: Bool { targetFlipped != spawnFlipped }
+    /// A rotation step that leaves the shape looking identical never counts as required.
+    var requiresRotation: Bool {
+        let step = 4 / shape.rotationalSymmetry
+        guard step > 1 else { return false }
+        return targetRotation % step != spawnRotation % step
+    }
+
+    var requiresFlip: Bool { !shape.isFlipSymmetric && targetFlipped != spawnFlipped }
+}
+
+/// A static wall the player must maneuver pieces around, normalized coordinates.
+struct Obstacle: Codable {
+    var center: CGPoint
+    var size: CGSize          // normalized width/height (thin bars)
+
+    var rect: CGRect {
+        CGRect(x: center.x - size.width / 2, y: center.y - size.height / 2,
+               width: size.width, height: size.height)
+    }
 }
 
 /// A pair of portals for teleporter levels, normalized coordinates.
@@ -143,6 +180,9 @@ struct LevelDefinition: Codable, Identifiable {
     var pieces: [PieceDefinition]
     var boardMechanics: [Mechanic]
     var portals: [PortalPair]
+    var obstacles: [Obstacle]
+    /// Bonus pickups: drag any piece over them to collect extra coins.
+    var collectibles: [CGPoint]
     var parMoves: Int                 // moves for a Perfect rating
     var parTime: TimeInterval         // seconds for full time bonus
     var isBoss: Bool

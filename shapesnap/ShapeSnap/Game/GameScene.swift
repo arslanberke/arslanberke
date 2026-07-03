@@ -6,6 +6,7 @@ protocol GameSceneDelegate: AnyObject {
     func sceneDidCompleteLevel(accuracy: Double)
     func sceneDidUseMove()
     func sceneDidRejectPiece()
+    func sceneDidCollectBonus()
 }
 
 /// SpriteKit scene that renders the board, target silhouette and draggable pieces,
@@ -22,6 +23,8 @@ final class GameScene: SKScene {
     private var pieceNodes: [PieceNode] = []
     private var socketNodes: [SKShapeNode] = []
     private var portalNodes: [SKShapeNode] = []
+    private var obstacleNodes: [SKShapeNode] = []
+    private var collectibleNodes: [SKShapeNode] = []
     private var darknessMask: SKShapeNode?
 
     private var activePiece: PieceNode?
@@ -52,6 +55,8 @@ final class GameScene: SKScene {
         setupSockets()
         setupPieces()
         setupPortals()
+        setupObstacles()
+        setupCollectibles()
         startBoardMechanics()
     }
 
@@ -116,6 +121,7 @@ final class GameScene: SKScene {
             if piece.mechanics.contains(.locked) { node.applyLockedState() }
             if piece.mechanics.contains(.invisible) { node.startBlinking() }
             if piece.mechanics.contains(.shapeShifting) { node.startShapeShifting() }
+            if piece.mechanics.contains(.pulsing) { node.startPulsing() }
         }
     }
 
@@ -133,6 +139,46 @@ final class GameScene: SKScene {
                 portalNodes.append(portal)
             }
         }
+    }
+
+    private func setupObstacles() {
+        for obstacle in level.obstacles {
+            let rect = obstacleSceneRect(obstacle)
+            let node = SKShapeNode(rect: CGRect(origin: CGPoint(x: -rect.width / 2, y: -rect.height / 2),
+                                                size: rect.size), cornerRadius: rect.height / 2)
+            node.position = CGPoint(x: rect.midX, y: rect.midY)
+            node.fillColor = UIColor.label.withAlphaComponent(0.75)
+            node.strokeColor = .clear
+            node.zPosition = 8
+            addChild(node)
+            obstacleNodes.append(node)
+        }
+    }
+
+    private func setupCollectibles() {
+        for (index, point) in level.collectibles.enumerated() {
+            let node = SKShapeNode(circleOfRadius: 13)
+            node.position = CGPoint(x: point.x * size.width, y: point.y * size.height)
+            node.fillColor = UIColor.systemYellow
+            node.strokeColor = UIColor.systemOrange
+            node.lineWidth = 2
+            node.glowWidth = 3
+            node.zPosition = 9
+            node.name = "collectible-\(index)"
+            let bob = SKAction.sequence([.moveBy(x: 0, y: 6, duration: 0.8),
+                                         .moveBy(x: 0, y: -6, duration: 0.8)])
+            bob.timingMode = .easeInEaseOut
+            node.run(.repeatForever(bob))
+            addChild(node)
+            collectibleNodes.append(node)
+        }
+    }
+
+    private func obstacleSceneRect(_ obstacle: Obstacle) -> CGRect {
+        CGRect(x: obstacle.rect.minX * size.width,
+               y: obstacle.rect.minY * size.height,
+               width: obstacle.rect.width * size.width,
+               height: obstacle.rect.height * size.height)
     }
 
     private func startBoardMechanics() {
@@ -190,10 +236,42 @@ final class GameScene: SKScene {
                                y: piece.position.y - dragOffset.y + delta.y)
         }
 
-        piece.position = CGPoint(x: location.x + dragOffset.x, y: location.y + dragOffset.y)
+        let proposed = CGPoint(x: location.x + dragOffset.x, y: location.y + dragOffset.y)
+        if movementAllowed(for: piece, to: proposed) {
+            piece.position = proposed
+        } else {
+            // blocked by a wall — try sliding along one axis so movement feels smooth
+            let horizontal = CGPoint(x: proposed.x, y: piece.position.y)
+            let vertical = CGPoint(x: piece.position.x, y: proposed.y)
+            if movementAllowed(for: piece, to: horizontal) { piece.position = horizontal }
+            else if movementAllowed(for: piece, to: vertical) { piece.position = vertical }
+        }
+        collectBonuses(around: piece)
         checkPortalTravel(piece)
         applyMagnetism(to: piece)
         highlightNearestSocket(for: piece)
+    }
+
+    /// Pieces cannot pass through obstacle bars. Pulsing pieces use their current
+    /// (animated) scale, so a shrunken piece fits through gaps a grown one cannot.
+    private func movementAllowed(for piece: PieceNode, to position: CGPoint) -> Bool {
+        guard !level.obstacles.isEmpty else { return true }
+        let radius = piece.collisionRadius
+        let pieceRect = CGRect(x: position.x - radius, y: position.y - radius,
+                               width: radius * 2, height: radius * 2)
+        return !level.obstacles.contains { obstacleSceneRect($0).intersects(pieceRect) }
+    }
+
+    private func collectBonuses(around piece: PieceNode) {
+        for node in collectibleNodes where node.parent != nil {
+            if hypot(piece.position.x - node.position.x, piece.position.y - node.position.y) < piece.collisionRadius {
+                node.run(.sequence([.group([.scale(to: 1.8, duration: 0.2), .fadeOut(withDuration: 0.2)]),
+                                    .removeFromParent()]))
+                HapticsManager.shared.medium()
+                AudioManager.shared.play(.coin)
+                gameDelegate?.sceneDidCollectBonus()
+            }
+        }
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -247,9 +325,14 @@ final class GameScene: SKScene {
         let socketScenePosition = boardNode.convert(socket.position, to: self)
         let distance = hypot(piece.position.x - socketScenePosition.x, piece.position.y - socketScenePosition.y)
 
+        // Rotation/flip only need to match up to the shape's own symmetry, so a
+        // square (or any 4-fold symmetric shape) snaps at any angle.
+        let symmetryStep = 4 / piece.definition.shape.rotationalSymmetry
         let effectiveTargetRotation = (piece.definition.targetRotation + rotationOffsetFromBoard()) % 4
-        let rotationMatches = !piece.definition.requiresRotation || piece.currentRotation == effectiveTargetRotation
-        let flipMatches = piece.currentFlipped == piece.definition.targetFlipped
+        let rotationMatches = symmetryStep <= 1 ||
+            piece.currentRotation % symmetryStep == effectiveTargetRotation % symmetryStep
+        let flipMatches = piece.definition.shape.isFlipSymmetric ||
+            piece.currentFlipped == piece.definition.targetFlipped
 
         if distance <= snapDistance && rotationMatches && flipMatches {
             let accuracy = 1.0 - Double(distance / snapDistance) * 0.5
@@ -272,6 +355,7 @@ final class GameScene: SKScene {
     private func place(_ piece: PieceNode, at position: CGPoint, accuracy: Double) {
         piece.isPlaced = true
         piece.removeAllActions()
+        piece.setScale(1.0)
         piece.disableGravity()
         piece.run(.group([
             .move(to: position, duration: 0.12),
