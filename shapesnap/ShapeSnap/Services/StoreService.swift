@@ -42,13 +42,13 @@ final class StoreService: ObservableObject {
     }
 
     private func refreshPurchases() async {
-        for await entitlement in Transaction.currentEntitlements {
+        for await entitlement in StoreKit.Transaction.currentEntitlements {
             if case .verified(let transaction) = entitlement { apply(transaction) }
         }
     }
 
     private func listenForTransactions() async {
-        for await update in Transaction.updates {
+        for await update in StoreKit.Transaction.updates {
             if case .verified(let transaction) = update {
                 apply(transaction)
                 await transaction.finish()
@@ -56,7 +56,7 @@ final class StoreService: ObservableObject {
         }
     }
 
-    private func apply(_ transaction: Transaction) {
+    private func apply(_ transaction: StoreKit.Transaction) {
         purchasedIDs.insert(transaction.productID)
         switch transaction.productID {
         case ProductID.removeAds:
