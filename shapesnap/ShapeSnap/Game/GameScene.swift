@@ -7,6 +7,7 @@ protocol GameSceneDelegate: AnyObject {
     func sceneDidUseMove()
     func sceneDidRejectPiece()
     func sceneDidCollectBonus()
+    func sceneDidTouchHazard()
 }
 
 /// SpriteKit scene that renders the board, target silhouette and draggable pieces,
@@ -29,6 +30,7 @@ final class GameScene: SKScene {
 
     private var activePiece: PieceNode?
     private var dragOffset: CGPoint = .zero
+    private var lastHazardHit: CFTimeInterval = 0
     private var placedCount = 0
     private var accuracySamples: [Double] = []
     private var boardAngle: CGFloat = 0
@@ -147,8 +149,19 @@ final class GameScene: SKScene {
             let node = SKShapeNode(rect: CGRect(origin: CGPoint(x: -rect.width / 2, y: -rect.height / 2),
                                                 size: rect.size), cornerRadius: rect.height / 2)
             node.position = CGPoint(x: rect.midX, y: rect.midY)
-            node.fillColor = UIColor.label.withAlphaComponent(0.75)
-            node.strokeColor = .clear
+            if obstacle.isHazard {
+                node.fillColor = UIColor.systemRed.withAlphaComponent(0.85)
+                node.strokeColor = UIColor.systemOrange
+                node.lineWidth = 2.5
+                node.glowWidth = 4
+                let warn = SKAction.sequence([.fadeAlpha(to: 0.55, duration: 0.6),
+                                              .fadeAlpha(to: 1.0, duration: 0.6)])
+                warn.timingMode = .easeInEaseOut
+                node.run(.repeatForever(warn))
+            } else {
+                node.fillColor = UIColor.label.withAlphaComponent(0.75)
+                node.strokeColor = .clear
+            }
             node.zPosition = 8
             addChild(node)
             obstacleNodes.append(node)
@@ -247,19 +260,38 @@ final class GameScene: SKScene {
             else if movementAllowed(for: piece, to: vertical) { piece.position = vertical }
         }
         collectBonuses(around: piece)
+        checkHazardContact(for: piece)
         checkPortalTravel(piece)
         applyMagnetism(to: piece)
         highlightNearestSocket(for: piece)
     }
 
-    /// Pieces cannot pass through obstacle bars. Pulsing pieces use their current
-    /// (animated) scale, so a shrunken piece fits through gaps a grown one cannot.
+    /// Pieces cannot pass through solid obstacle bars (hazards let them through
+    /// at a cost). Pulsing pieces use their current (animated) scale, so a
+    /// shrunken piece fits through gaps a grown one cannot.
     private func movementAllowed(for piece: PieceNode, to position: CGPoint) -> Bool {
         guard !level.obstacles.isEmpty else { return true }
         let radius = piece.collisionRadius
         let pieceRect = CGRect(x: position.x - radius, y: position.y - radius,
                                width: radius * 2, height: radius * 2)
-        return !level.obstacles.contains { obstacleSceneRect($0).intersects(pieceRect) }
+        return !level.obstacles.contains { !$0.isHazard && obstacleSceneRect($0).intersects(pieceRect) }
+    }
+
+    private func checkHazardContact(for piece: PieceNode) {
+        guard CACurrentMediaTime() - lastHazardHit > 1.0 else { return }
+        let radius = piece.collisionRadius
+        let pieceRect = CGRect(x: piece.position.x - radius, y: piece.position.y - radius,
+                               width: radius * 2, height: radius * 2)
+        guard let index = level.obstacles.firstIndex(where: { $0.isHazard && obstacleSceneRect($0).intersects(pieceRect) })
+        else { return }
+        lastHazardHit = CACurrentMediaTime()
+        if index < obstacleNodes.count {
+            obstacleNodes[index].run(.sequence([.scale(to: 1.12, duration: 0.08), .scale(to: 1.0, duration: 0.12)]))
+        }
+        showBadge("-10", above: piece)
+        HapticsManager.shared.error()
+        AudioManager.shared.play(.reject)
+        gameDelegate?.sceneDidTouchHazard()
     }
 
     private func collectBonuses(around piece: PieceNode) {

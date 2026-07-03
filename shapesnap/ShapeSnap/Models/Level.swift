@@ -165,6 +165,8 @@ enum BoardLayout {
 struct Obstacle: Codable {
     var center: CGPoint
     var size: CGSize          // normalized width/height (thin bars)
+    /// Hazards don't block movement but cost coins when a piece touches them.
+    var isHazard: Bool = false
 
     var rect: CGRect {
         CGRect(x: center.x - size.width / 2, y: center.y - size.height / 2,

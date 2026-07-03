@@ -154,8 +154,15 @@ enum LevelGenerator {
         var collectibles: [CGPoint] = []
         if index > 15 && index % 3 == 0 {
             for _ in 0..<Int.random(in: 1...2, using: &rng) {
-                collectibles.append(CGPoint(x: CGFloat(Double.random(in: 0.15...0.85, using: &rng)),
-                                            y: CGFloat(Double.random(in: 0.3...0.8, using: &rng))))
+                for _ in 0..<20 {   // keep pickups off the obstacle bars
+                    let candidate = CGPoint(x: CGFloat(Double.random(in: 0.15...0.85, using: &rng)),
+                                            y: CGFloat(Double.random(in: 0.3...0.8, using: &rng)))
+                    let clear = obstacles.allSatisfy { !$0.rect.insetBy(dx: -0.05, dy: -0.05).contains(candidate) }
+                    if clear {
+                        collectibles.append(candidate)
+                        break
+                    }
+                }
             }
         }
 
@@ -216,20 +223,26 @@ enum LevelGenerator {
         let bandTop = lowestTargetY - pieceH * 0.9
         guard bandTop - bandBottom > 0.04 else { return [] }
 
-        func row(y: CGFloat, gapCenter: CGFloat) -> [Obstacle] {
+        func row(y: CGFloat, gapCenter: CGFloat, hazard: Bool = false) -> [Obstacle] {
             var bars: [Obstacle] = []
             let leftEnd = max(board.minX, gapCenter - gapWidth / 2)
             let rightStart = min(board.maxX, gapCenter + gapWidth / 2)
             if leftEnd - board.minX > 0.03 {
                 bars.append(Obstacle(center: CGPoint(x: (board.minX + leftEnd) / 2, y: y),
-                                     size: CGSize(width: leftEnd - board.minX, height: thickness)))
+                                     size: CGSize(width: leftEnd - board.minX, height: thickness),
+                                     isHazard: hazard))
             }
             if board.maxX - rightStart > 0.03 {
                 bars.append(Obstacle(center: CGPoint(x: (rightStart + board.maxX) / 2, y: y),
-                                     size: CGSize(width: board.maxX - rightStart, height: thickness)))
+                                     size: CGSize(width: board.maxX - rightStart, height: thickness),
+                                     isHazard: hazard))
             }
             return bars
         }
+
+        // From mid-World-1 on, some rows become hazards: they don't block but
+        // cost coins on contact.
+        let hazardAllowed = (world == 1 && index > 20) || world != 1
 
         var obstacles: [Obstacle] = []
 
@@ -240,7 +253,8 @@ enum LevelGenerator {
                 let y = bandBottom + (bandTop - bandBottom) * (CGFloat(i) + 0.5) / CGFloat(rows)
                 let gapCenter = i % 2 == 0 ? board.minX + board.width * 0.2
                                            : board.maxX - board.width * 0.2
-                obstacles += row(y: y, gapCenter: gapCenter)
+                let hazard = hazardAllowed && Double.random(in: 0...1, using: &rng) < 0.35
+                obstacles += row(y: y, gapCenter: gapCenter, hazard: hazard)
             }
             return obstacles
         }
@@ -250,7 +264,8 @@ enum LevelGenerator {
                 let y = bandBottom + (bandTop - bandBottom) * CGFloat(Double.random(in: 0...1, using: &rng))
                 let gapCenter = board.minX + board.width * CGFloat(Double.random(in: 0.2...0.8, using: &rng))
                 if obstacles.allSatisfy({ abs($0.center.y - y) > 0.08 }) {
-                    obstacles += row(y: y, gapCenter: gapCenter)
+                    let hazard = hazardAllowed && Double.random(in: 0...1, using: &rng) < 0.35
+                    obstacles += row(y: y, gapCenter: gapCenter, hazard: hazard)
                     break
                 }
             }

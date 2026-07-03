@@ -84,6 +84,13 @@ final class GameSession: ObservableObject, GameSceneDelegate {
 
     nonisolated func sceneDidRejectPiece() {}
 
+    nonisolated func sceneDidTouchHazard() {
+        Task { @MainActor in
+            self.bonusCoins -= 10
+            self.progress.coins = max(0, self.progress.coins - 10)
+        }
+    }
+
     nonisolated func sceneDidCollectBonus() {
         Task { @MainActor in
             self.bonusCoins += 15
