@@ -274,13 +274,9 @@ enum LevelGenerator {
 
         var obstacles: [Obstacle] = []
 
-        // Rows must be far enough apart vertically that the piece fits BETWEEN
-        // them at any rotation — otherwise zigzag paths become impassable.
-        let rowSpacing = max(0.1, pieceH * 2.0)
-
         if corridor {
             // Alternating gaps (left, right, left) force a winding path upward.
-            let rows = max(1, min(3, Int((bandTop - bandBottom) / rowSpacing)))
+            let rows = max(1, min(3, Int((bandTop - bandBottom) / 0.09)))
             for i in 0..<rows {
                 let y = bandBottom + (bandTop - bandBottom) * (CGFloat(i) + 0.5) / CGFloat(rows)
                 let gapCenter = i % 2 == 0 ? board.minX + board.width * 0.2
@@ -296,7 +292,7 @@ enum LevelGenerator {
             for _ in 0..<25 {   // find a bar row inside the band, clear of other bars
                 let y = bandBottom + (bandTop - bandBottom) * CGFloat(Double.random(in: 0...1, using: &rng))
                 let gapCenter = board.minX + board.width * CGFloat(Double.random(in: 0.2...0.8, using: &rng))
-                if obstacles.allSatisfy({ abs($0.center.y - y) > rowSpacing }) {
+                if obstacles.allSatisfy({ abs($0.center.y - y) > 0.08 }) {
                     let hazard = hazardAllowed && Double.random(in: 0...1, using: &rng) < 0.35
                     obstacles += row(y: y, gapCenter: gapCenter, hazard: hazard)
                     break
