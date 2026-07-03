@@ -13,6 +13,7 @@ final class AudioManager {
     private let format: AVAudioFormat
     private var effectBuffers: [Effect: AVAudioPCMBuffer] = [:]
     private var ambientBuffer: AVAudioPCMBuffer?
+    private var pendingAmbient = false
 
     private var soundOn: Bool { GameSettings.shared.soundEnabled }
     private var musicOn: Bool { GameSettings.shared.musicEnabled }
@@ -25,8 +26,16 @@ final class AudioManager {
         engine.connect(effectPlayer, to: engine.mainMixerNode, format: format)
         engine.connect(ambientPlayer, to: engine.mainMixerNode, format: format)
         ambientPlayer.volume = 0.25
-        buildBuffers()
-        try? engine.start()
+        // Buffer synthesis fills ~1.5M samples — do it off the main thread so
+        // it never delays app launch.
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            self.buildBuffers()
+            try? self.engine.start()
+            DispatchQueue.main.async {
+                if self.pendingAmbient { self.startAmbient() }
+            }
+        }
     }
 
     func play(_ effect: Effect) {
@@ -37,7 +46,9 @@ final class AudioManager {
     }
 
     func startAmbient() {
-        guard musicOn, let buffer = ambientBuffer else { return }
+        guard musicOn else { return }
+        guard let buffer = ambientBuffer else { pendingAmbient = true; return }
+        pendingAmbient = false
         if !engine.isRunning { try? engine.start() }
         ambientPlayer.scheduleBuffer(buffer, at: nil, options: .loops)
         ambientPlayer.play()
