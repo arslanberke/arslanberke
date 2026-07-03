@@ -248,8 +248,11 @@ enum LevelGenerator {
         // like hurdles between the start and the finish line.
         let lowestTargetY = sceneTargets.map(\.y).min() ?? board.maxY
         let bandBottom = board.minY + 0.03
-        let bandTop = lowestTargetY - pieceH * 0.9
+        let bandTop = lowestTargetY - pieceH * 0.75
         guard bandTop - bandBottom > 0.04 else { return [] }
+        // Vertical clearance between rows: the tallest piece must fit between
+        // two rows with a little headroom — if it fits, every piece fits.
+        let rowSpacing = pieceH * 1.2
 
         func row(y: CGFloat, gapCenter: CGFloat, hazard: Bool = false) -> [Obstacle] {
             var bars: [Obstacle] = []
@@ -276,7 +279,7 @@ enum LevelGenerator {
 
         if corridor {
             // Alternating gaps (left, right, left) force a winding path upward.
-            let rows = max(1, min(3, Int((bandTop - bandBottom) / 0.09)))
+            let rows = max(1, min(3, Int((bandTop - bandBottom) / max(0.09, rowSpacing))))
             for i in 0..<rows {
                 let y = bandBottom + (bandTop - bandBottom) * (CGFloat(i) + 0.5) / CGFloat(rows)
                 let gapCenter = i % 2 == 0 ? board.minX + board.width * 0.2
@@ -292,7 +295,7 @@ enum LevelGenerator {
             for _ in 0..<25 {   // find a bar row inside the band, clear of other bars
                 let y = bandBottom + (bandTop - bandBottom) * CGFloat(Double.random(in: 0...1, using: &rng))
                 let gapCenter = board.minX + board.width * CGFloat(Double.random(in: 0.2...0.8, using: &rng))
-                if obstacles.allSatisfy({ abs($0.center.y - y) > 0.08 }) {
+                if obstacles.allSatisfy({ abs($0.center.y - y) > rowSpacing }) {
                     let hazard = hazardAllowed && Double.random(in: 0...1, using: &rng) < 0.35
                     obstacles += row(y: y, gapCenter: gapCenter, hazard: hazard)
                     break
