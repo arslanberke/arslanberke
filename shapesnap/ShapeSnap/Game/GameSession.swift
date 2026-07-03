@@ -94,11 +94,14 @@ final class GameSession: ObservableObject, GameSceneDelegate {
         }
     }
 
-    nonisolated func sceneDidTakeBossHit() {
+    nonisolated func sceneDidTakeBossHit(brokeChunk: Bool) {
         Task { @MainActor in
             self.bossHits += 1
             if self.level.id == LevelCatalog.totalLevels {
-                return   // final boss cracks pieces (score penalty) instead of hearts
+                // Final boss cracks pieces instead of hearts; a chunk breaking
+                // off (3 hits in the same spot) costs extra.
+                if brokeChunk { self.bossHits += 2 }
+                return
             }
             self.hearts -= 1
             if self.hearts <= 0 {

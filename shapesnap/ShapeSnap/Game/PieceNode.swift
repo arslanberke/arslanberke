@@ -15,6 +15,7 @@ final class PieceNode: SKNode {
     private let shadow: SKShapeNode
     private let unit: CGFloat
     private var lockIcon: SKLabelNode?
+    private var crackHits: [CGPoint] = []
 
     var canBeMoved: Bool { !isPlaced }
 
@@ -157,12 +158,23 @@ final class PieceNode: SKNode {
                        .moveBy(x: 6, y: 0, duration: 0.04)]))
     }
 
-    /// Final-boss damage: a chunk visibly breaks off — a shard flies away and
-    /// a jagged crack stays on the piece.
-    func applyCrack() {
+    /// Final-boss damage: each hit leaves a crack where the shot landed, a
+    /// shard flies off, and a third hit in the same area punches a hole.
+    /// Returns true when a hole formed (worth an extra score penalty).
+    @discardableResult
+    func applyCrack(atSceneAt scenePoint: CGPoint) -> Bool {
         let extent = max(body.frame.width, body.frame.height) / 2
-        let origin = CGPoint(x: CGFloat.random(in: -extent * 0.5...extent * 0.5),
+        var origin: CGPoint
+        if let scene {
+            let local = convert(scenePoint, from: scene)
+            origin = CGPoint(x: min(max(local.x, -extent * 0.7), extent * 0.7),
+                             y: min(max(local.y, -extent * 0.7), extent * 0.7))
+        } else {
+            origin = CGPoint(x: CGFloat.random(in: -extent * 0.5...extent * 0.5),
                              y: CGFloat.random(in: -extent * 0.5...extent * 0.5))
+        }
+        crackHits.append(origin)
+        let nearby = crackHits.filter { hypot($0.x - origin.x, $0.y - origin.y) < extent * 0.45 }
 
         let crackPath = CGMutablePath()
         crackPath.move(to: origin)
@@ -197,7 +209,24 @@ final class PieceNode: SKNode {
             .fadeOut(withDuration: 0.7),
         ])) { shard.removeFromParent() }
 
-        body.alpha = max(0.65, body.alpha - 0.1)
+        body.alpha = max(0.65, body.alpha - 0.08)
+
+        if nearby.count >= 3 {
+            // Third hit in the same area: that spot breaks into a hole.
+            let holeRadius = extent * 0.28
+            let hole = SKShapeNode(circleOfRadius: holeRadius)
+            hole.fillColor = UIColor.black.withAlphaComponent(0.7)
+            hole.strokeColor = UIColor.black.withAlphaComponent(0.9)
+            hole.lineWidth = 1.5
+            hole.position = origin
+            hole.zPosition = 3
+            hole.setScale(0.1)
+            addChild(hole)
+            hole.run(.scale(to: 1.0, duration: 0.15))
+            crackHits.removeAll { hypot($0.x - origin.x, $0.y - origin.y) < extent * 0.45 }
+            return true
+        }
+        return false
     }
 
     /// Brief green confirmation so the player knows the piece is locked in.
@@ -206,22 +235,8 @@ final class PieceNode: SKNode {
         let originalWidth = body.lineWidth
         body.strokeColor = UIColor.systemGreen
         body.lineWidth = 3
-        let check = SKLabelNode(text: "\u{2713}")
-        check.fontName = "AvenirNext-Bold"
-        check.fontSize = 22
-        check.fontColor = .systemGreen
-        check.verticalAlignmentMode = .center
-        check.zPosition = 4
-        check.setScale(0.1)
-        addChild(check)
-        check.run(.sequence([
-            .scale(to: 1.0, duration: 0.18),
-            .wait(forDuration: 0.5),
-            .fadeOut(withDuration: 0.25),
-            .removeFromParent(),
-        ]))
         let shape = body
-        run(.sequence([.wait(forDuration: 0.9), .run {
+        run(.sequence([.wait(forDuration: 0.5), .run {
             shape.strokeColor = original
             shape.lineWidth = originalWidth
         }]))

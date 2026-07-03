@@ -8,7 +8,7 @@ protocol GameSceneDelegate: AnyObject {
     func sceneDidRejectPiece()
     func sceneDidCollectBonus()
     func sceneDidTouchHazard()
-    func sceneDidTakeBossHit()
+    func sceneDidTakeBossHit(brokeChunk: Bool)
 }
 
 /// SpriteKit scene that renders the board, target silhouette and draggable pieces,
@@ -186,31 +186,33 @@ final class GameScene: SKScene {
             for projectile in projectileNodes {
                 if hypot(projectile.position.x - piece.position.x,
                          projectile.position.y - piece.position.y) < radius + 7 {
+                    let impact = projectile.position
                     projectile.removeFromParent()
-                    registerBossHit(on: piece)
+                    registerBossHit(on: piece, at: impact)
                     return
                 }
             }
             if let beam = laserNode, beam.parent != nil,
                abs(beam.position.y - piece.position.y) < radius + 5,
                abs(beam.position.x - piece.position.x) < radius + 45 {
-                registerBossHit(on: piece)
+                registerBossHit(on: piece, at: CGPoint(x: piece.position.x, y: beam.position.y))
                 return
             }
         }
     }
 
-    private func registerBossHit(on piece: PieceNode) {
+    private func registerBossHit(on piece: PieceNode, at impact: CGPoint) {
         lastBossHit = CACurrentMediaTime()
         piece.flashDamage()
+        var brokeChunk = false
         if level.id == LevelCatalog.totalLevels {
-            piece.applyCrack()
+            brokeChunk = piece.applyCrack(atSceneAt: impact)
         } else {
             showBadge("-\u{2764}\u{FE0F}", above: piece)
         }
         HapticsManager.shared.error()
         AudioManager.shared.play(.fail)
-        gameDelegate?.sceneDidTakeBossHit()
+        gameDelegate?.sceneDidTakeBossHit(brokeChunk: brokeChunk)
     }
 
     // MARK: - Setup
