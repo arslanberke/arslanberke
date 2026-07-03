@@ -37,6 +37,9 @@ final class GameScene: SKScene {
     private var laserNode: SKShapeNode?
     private var lastBossHit: CFTimeInterval = 0
     private weak var lastTouchedPiece: PieceNode?
+    /// Once a piece has entered the board it must be placed before another
+    /// piece can be picked up.
+    private weak var committedPiece: PieceNode?
     private var placedCount = 0
     private var accuracySamples: [Double] = []
     private var boardAngle: CGFloat = 0
@@ -387,6 +390,14 @@ final class GameScene: SKScene {
             .filter({ !$0.isPlaced && $0.containsTouch(at: location) && $0.canBeMoved })
             .max(by: { $0.zPosition < $1.zPosition }) else { return }
 
+        if let committed = committedPiece, !committed.isPlaced, committed !== node {
+            committed.run(.sequence([.moveBy(x: 6, y: 0, duration: 0.05),
+                                     .moveBy(x: -12, y: 0, duration: 0.1),
+                                     .moveBy(x: 6, y: 0, duration: 0.05)]))
+            HapticsManager.shared.warning()
+            return
+        }
+
         if node.definition.mechanics.contains(.locked) && node.isLocked {
             node.shakeLock()
             HapticsManager.shared.warning()
@@ -424,6 +435,7 @@ final class GameScene: SKScene {
             if movementAllowed(for: piece, to: horizontal) { piece.position = horizontal }
             else if movementAllowed(for: piece, to: vertical) { piece.position = vertical }
         }
+        if piece.isPlaced == false && boardRect.contains(piece.position) { committedPiece = piece }
         collectBonuses(around: piece)
         checkHazardContact(for: piece)
         checkPortalTravel(piece)
@@ -505,6 +517,10 @@ final class GameScene: SKScene {
         piece.endDrag()
         gameDelegate?.sceneDidUseMove()
         attemptSnap(piece)
+        // Dragging the piece back out of the board releases the commitment.
+        if let committed = committedPiece, committed.isPlaced || !boardRect.contains(committed.position) {
+            committedPiece = nil
+        }
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
