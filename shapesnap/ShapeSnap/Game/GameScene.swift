@@ -33,7 +33,7 @@ final class GameScene: SKScene {
     private var accuracySamples: [Double] = []
     private var boardAngle: CGFloat = 0
 
-    private var snapDistance: CGFloat { min(size.width, size.height) * 0.06 }
+    private var snapDistance: CGFloat { min(size.width, size.height) * 0.075 }
     private var boardRect: CGRect {
         CGRect(x: size.width * BoardLayout.rect.minX, y: size.height * BoardLayout.rect.minY,
                width: size.width * BoardLayout.rect.width, height: size.height * BoardLayout.rect.height)
@@ -313,9 +313,47 @@ final class GameScene: SKScene {
     func showHint() {
         guard let piece = pieceNodes.first(where: { !$0.isPlaced }),
               let socket = socketNodes.first(where: { $0.name == "socket-\(piece.definition.id)" }) else { return }
-        let pulse = SKAction.sequence([.scale(to: 1.15, duration: 0.3), .scale(to: 1.0, duration: 0.3)])
-        socket.run(.repeat(pulse, count: 3))
-        piece.run(.repeat(pulse, count: 3))
+        if let text = orientationHintText(for: piece) {
+            showBadge(text, above: piece)
+        } else {
+            let pulse = SKAction.sequence([.scale(to: 1.15, duration: 0.3), .scale(to: 1.0, duration: 0.3)])
+            socket.run(.repeat(pulse, count: 3))
+            piece.run(.repeat(pulse, count: 3))
+        }
+    }
+
+    /// "↻ ×2  ⇄"-style description of the rotations/flip still needed, or nil
+    /// when the piece is already correctly oriented.
+    private func orientationHintText(for piece: PieceNode) -> String? {
+        let step = 4 / piece.definition.shape.rotationalSymmetry
+        var text = ""
+        if step > 1 {
+            let target = (piece.definition.targetRotation + rotationOffsetFromBoard()) % 4
+            let needed = ((target - piece.currentRotation) % step + step) % step
+            if needed > 0 { text = needed > 1 ? "↻ ×\(needed)" : "↻" }
+        }
+        if !piece.definition.shape.isFlipSymmetric && piece.currentFlipped != piece.definition.targetFlipped {
+            text += text.isEmpty ? "⇄" : "  ⇄"
+        }
+        return text.isEmpty ? nil : text
+    }
+
+    private func showBadge(_ text: String, above node: SKNode) {
+        let label = SKLabelNode(text: text)
+        label.fontName = "AvenirNext-Bold"
+        label.fontSize = 22
+        label.fontColor = .label
+        label.verticalAlignmentMode = .center
+        let bg = SKShapeNode(rectOf: CGSize(width: max(44, label.frame.width + 24), height: 36), cornerRadius: 18)
+        bg.fillColor = UIColor.systemBackground.withAlphaComponent(0.95)
+        bg.strokeColor = UIColor.separator
+        bg.position = CGPoint(x: node.position.x, y: node.position.y + 64)
+        bg.zPosition = 90
+        bg.alpha = 0
+        bg.addChild(label)
+        addChild(bg)
+        bg.run(.sequence([.fadeIn(withDuration: 0.15), .wait(forDuration: 1.6),
+                          .fadeOut(withDuration: 0.3), .removeFromParent()]))
     }
 
     // MARK: - Snapping & mechanics
@@ -342,6 +380,11 @@ final class GameScene: SKScene {
                 piece.freezeInPlace()
                 HapticsManager.shared.warning()
             } else if distance <= snapDistance * 2 {
+                // Dropped in the right spot but wrong orientation: tell the player
+                // exactly what is missing instead of a silent reject.
+                if !(rotationMatches && flipMatches), let text = orientationHintText(for: piece) {
+                    showBadge(text, above: piece)
+                }
                 piece.run(.sequence([.moveBy(x: 8, y: 0, duration: 0.05),
                                      .moveBy(x: -16, y: 0, duration: 0.1),
                                      .moveBy(x: 8, y: 0, duration: 0.05)]))
