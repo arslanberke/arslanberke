@@ -291,16 +291,17 @@ enum LevelGenerator {
                             pieceW: pieceW, pieceH: pieceH)
         }
 
-        for _ in 0..<barRows {
-            for _ in 0..<25 {   // find a bar row inside the band, clear of other bars
-                let y = bandBottom + (bandTop - bandBottom) * CGFloat(Double.random(in: 0...1, using: &rng))
-                let gapCenter = board.minX + board.width * CGFloat(Double.random(in: 0.2...0.8, using: &rng))
-                if obstacles.allSatisfy({ abs($0.center.y - y) > rowSpacing }) {
-                    let hazard = hazardAllowed && Double.random(in: 0...1, using: &rng) < 0.35
-                    obstacles += row(y: y, gapCenter: gapCenter, hazard: hazard)
-                    break
-                }
-            }
+        // Distribute rows evenly across the band (random placement kept
+        // failing the spacing check, which silently deleted rows).
+        let fittingRows = max(1, Int((bandTop - bandBottom) / rowSpacing))
+        let rowCount = min(barRows, fittingRows)
+        for i in 0..<rowCount {
+            let slotHeight = (bandTop - bandBottom) / CGFloat(rowCount)
+            let jitter = CGFloat(Double.random(in: -0.08...0.08, using: &rng)) * slotHeight
+            let y = bandBottom + slotHeight * (CGFloat(i) + 0.5) + jitter
+            let gapCenter = board.minX + board.width * CGFloat(Double.random(in: 0.2...0.8, using: &rng))
+            let hazard = hazardAllowed && Double.random(in: 0...1, using: &rng) < 0.35
+            obstacles += row(y: y, gapCenter: gapCenter, hazard: hazard)
         }
 
         // Later content also gets a vertical bar with a gap, making the field a maze.
