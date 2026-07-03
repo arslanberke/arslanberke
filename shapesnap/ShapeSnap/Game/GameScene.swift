@@ -639,6 +639,7 @@ final class GameScene: SKScene {
         piece.alpha = 1
         piece.emitSnapParticles(theme: theme)
         piece.showPlacedConfirmation()
+        showAccuracyLabel(accuracy, at: position)
 
         placedCount += 1
         accuracySamples.append(accuracy)
@@ -653,6 +654,23 @@ final class GameScene: SKScene {
                 self?.gameDelegate?.sceneDidCompleteLevel(accuracy: meanAccuracy)
             }]))
         }
+    }
+
+    /// Tiny "%95" that floats up from the placed piece and fades away.
+    private func showAccuracyLabel(_ accuracy: Double, at position: CGPoint) {
+        let label = SKLabelNode(fontNamed: "AvenirNext-DemiBold")
+        label.text = "%\(Int((accuracy * 100).rounded()))"
+        label.fontSize = 12
+        label.fontColor = UIColor.systemGreen
+        label.position = CGPoint(x: position.x, y: position.y + 26)
+        label.zPosition = 80
+        label.alpha = 0
+        addChild(label)
+        label.run(.sequence([
+            .group([.fadeIn(withDuration: 0.12), .moveBy(x: 0, y: 10, duration: 0.5)]),
+            .group([.fadeOut(withDuration: 0.45), .moveBy(x: 0, y: 12, duration: 0.45)]),
+            .removeFromParent(),
+        ]))
     }
 
     private func rotationOffsetFromBoard() -> Int {
