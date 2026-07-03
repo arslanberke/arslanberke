@@ -102,13 +102,17 @@ enum LevelGenerator {
         let allowFlip = world == 4 || (world >= 7 && difficulty > 0.5) || world == 0
         // Pulsing timing mechanic appears alongside obstacles in later content.
         let pulsing = (world >= 5 || world == 0) && difficulty > 0.45 && index % 4 == 0
+        // Decide up-front whether this level has obstacle bars so targets can be
+        // pushed to the top of the board, keeping bars between spawn and target.
+        let hasObstacles = (world == 1 && index > 10) || (world != 1 && difficulty > 0.4 && index % 2 == 0)
 
         var pieces: [PieceDefinition] = []
         var usedTargets: [CGPoint] = []
         for pieceIndex in 0..<pieceCount {
             let shape = shapePool(difficulty: difficulty).randomElement(using: &rng)!
             let size = CGFloat(Double.random(in: 0.16...0.30, using: &rng)) * (isBoss ? 0.85 : 1.0)
-            let target = placeTarget(avoiding: usedTargets, size: size, rng: &rng)
+            let target = placeTarget(avoiding: usedTargets, size: size,
+                                     yRange: hasObstacles ? 0.6...0.88 : 0.35...0.85, rng: &rng)
             usedTargets.append(target)
 
             let targetRotation = allowRotation ? Int.random(in: 0...3, using: &rng) : 0
@@ -205,6 +209,12 @@ enum LevelGenerator {
         }
         let thickness: CGFloat = 0.018
         let gapWidth = max(pieceW * 1.6, 0.24)
+        // Bars must sit between the spawn tray (bottom) and the lowest target,
+        // like hurdles between the start and the finish line.
+        let lowestTargetY = sceneTargets.map(\.y).min() ?? board.maxY
+        let bandBottom = board.minY + 0.03
+        let bandTop = lowestTargetY - pieceH * 0.9
+        guard bandTop - bandBottom > 0.04 else { return [] }
 
         func row(y: CGFloat, gapCenter: CGFloat) -> [Obstacle] {
             var bars: [Obstacle] = []
@@ -225,9 +235,9 @@ enum LevelGenerator {
 
         if corridor {
             // Alternating gaps (left, right, left) force a winding path upward.
-            for i in 0..<3 {
-                let y = board.minY + board.height * (0.24 + CGFloat(i) * 0.24)
-                guard sceneTargets.allSatisfy({ abs($0.y - y) > pieceH * 0.9 }) else { continue }
+            let rows = max(1, min(3, Int((bandTop - bandBottom) / 0.09)))
+            for i in 0..<rows {
+                let y = bandBottom + (bandTop - bandBottom) * (CGFloat(i) + 0.5) / CGFloat(rows)
                 let gapCenter = i % 2 == 0 ? board.minX + board.width * 0.2
                                            : board.maxX - board.width * 0.2
                 obstacles += row(y: y, gapCenter: gapCenter)
@@ -236,12 +246,10 @@ enum LevelGenerator {
         }
 
         for _ in 0..<barRows {
-            for _ in 0..<25 {   // find a bar row that avoids sockets and other bars
-                let y = board.minY + board.height * CGFloat(Double.random(in: 0.2...0.8, using: &rng))
+            for _ in 0..<25 {   // find a bar row inside the band, clear of other bars
+                let y = bandBottom + (bandTop - bandBottom) * CGFloat(Double.random(in: 0...1, using: &rng))
                 let gapCenter = board.minX + board.width * CGFloat(Double.random(in: 0.2...0.8, using: &rng))
-                let clearsTargets = sceneTargets.allSatisfy { abs($0.y - y) > pieceH * 0.9 }
-                let clearsExisting = obstacles.allSatisfy { abs($0.center.y - y) > 0.09 }
-                if clearsTargets && clearsExisting {
+                if obstacles.allSatisfy({ abs($0.center.y - y) > 0.08 }) {
                     obstacles += row(y: y, gapCenter: gapCenter)
                     break
                 }
@@ -265,14 +273,15 @@ enum LevelGenerator {
         return PieceShape.allCases
     }
 
-    private static func placeTarget(avoiding used: [CGPoint], size: CGFloat, rng: inout SeededRandom) -> CGPoint {
+    private static func placeTarget(avoiding used: [CGPoint], size: CGFloat,
+                                    yRange: ClosedRange<Double>, rng: inout SeededRandom) -> CGPoint {
         for _ in 0..<40 {
             let candidate = CGPoint(x: CGFloat(Double.random(in: 0.2...0.8, using: &rng)),
-                                    y: CGFloat(Double.random(in: 0.35...0.85, using: &rng)))
+                                    y: CGFloat(Double.random(in: yRange, using: &rng)))
             let tooClose = used.contains { hypot($0.x - candidate.x, $0.y - candidate.y) < size * 1.1 }
             if !tooClose { return candidate }
         }
-        return CGPoint(x: 0.5, y: 0.6)
+        return CGPoint(x: 0.5, y: (yRange.lowerBound + yRange.upperBound) / 2)
     }
 }
 
