@@ -285,7 +285,8 @@ enum LevelGenerator {
                 let hazard = hazardAllowed && Double.random(in: 0...1, using: &rng) < 0.35
                 obstacles += row(y: y, gapCenter: gapCenter, hazard: hazard)
             }
-            return obstacles
+            return sanitize(obstacles, board: board, sceneTargets: sceneTargets,
+                            pieceW: pieceW, pieceH: pieceH)
         }
 
         for _ in 0..<barRows {
@@ -319,7 +320,23 @@ enum LevelGenerator {
                                           isHazard: hazard))
             }
         }
-        return obstacles
+        return sanitize(obstacles, board: board, sceneTargets: sceneTargets,
+                        pieceW: pieceW, pieceH: pieceH)
+    }
+
+    /// Safety net: clamp every bar inside the board and drop any bar that would
+    /// crowd a target socket, no matter how it was generated.
+    private static func sanitize(_ obstacles: [Obstacle], board: CGRect, sceneTargets: [CGPoint],
+                                 pieceW: CGFloat, pieceH: CGFloat) -> [Obstacle] {
+        obstacles.compactMap { obstacle in
+            var rect = obstacle.rect.intersection(board.insetBy(dx: 0.005, dy: 0.005))
+            guard !rect.isNull, rect.width > 0.02, rect.height > 0.008 else { return nil }
+            rect = rect.standardized
+            let clearance = rect.insetBy(dx: -pieceW * 0.7, dy: -pieceH * 0.7)
+            guard sceneTargets.allSatisfy({ !clearance.contains($0) }) else { return nil }
+            return Obstacle(center: CGPoint(x: rect.midX, y: rect.midY),
+                            size: rect.size, isHazard: obstacle.isHazard)
+        }
     }
 
     private static func pieceCount(world: Int, difficulty: Double, isBoss: Bool, rng: inout SeededRandom) -> Int {

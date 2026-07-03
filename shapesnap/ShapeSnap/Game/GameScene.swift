@@ -41,7 +41,11 @@ final class GameScene: SKScene {
     private var accuracySamples: [Double] = []
     private var boardAngle: CGFloat = 0
 
-    private var snapDistance: CGFloat { min(size.width, size.height) * 0.075 }
+    private var snapDistance: CGFloat {
+        let base = min(size.width, size.height) * 0.075
+        // Moving targets are harder to hit, so give them a wider snap window.
+        return level.boardMechanics.contains(.movingTargets) ? base * 1.6 : base
+    }
     private var boardRect: CGRect {
         CGRect(x: size.width * BoardLayout.rect.minX, y: size.height * BoardLayout.rect.minY,
                width: size.width * BoardLayout.rect.width, height: size.height * BoardLayout.rect.height)
@@ -178,6 +182,14 @@ final class GameScene: SKScene {
     }
 
     override func update(_ currentTime: TimeInterval) {
+        // Placed pieces ride along with their drifting sockets.
+        if level.boardMechanics.contains(.movingTargets) {
+            for piece in pieceNodes where piece.isPlaced {
+                if let socket = socketNodes.first(where: { $0.name == "socket-\(piece.definition.id)" }) {
+                    piece.position = boardNode.convert(socket.position, to: self)
+                }
+            }
+        }
         guard level.isBoss, currentTime - lastBossHit > 1.0 else { return }
         projectileNodes.removeAll { $0.parent == nil }
 
