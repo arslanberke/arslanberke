@@ -81,7 +81,6 @@ final class GameScene: SKScene {
             let socket = makeShapeNode(for: piece, filled: false)
             socket.position = boardPoint(from: piece.targetPosition)
             socket.zRotation = CGFloat(piece.targetRotation) * .pi / 2
-            socket.xScale = piece.targetFlipped ? -1 : 1
             socket.fillColor = UIColor.label.withAlphaComponent(0.06)
             socket.strokeColor = UIColor.label.withAlphaComponent(0.18)
             socket.lineWidth = 2
@@ -351,7 +350,7 @@ final class GameScene: SKScene {
     func flipActivePiece() {
         guard let piece = controllablePiece() else { return }
         piece.currentFlipped.toggle()
-        piece.run(.scaleX(to: piece.currentFlipped ? -1 : 1, duration: 0.18))
+        piece.setFlipped(piece.currentFlipped)
         gameDelegate?.sceneDidUseMove()
         HapticsManager.shared.light()
         AudioManager.shared.play(.rotate)
@@ -446,6 +445,7 @@ final class GameScene: SKScene {
         piece.isPlaced = true
         piece.removeAllActions()
         piece.setScale(1.0)
+        piece.setFlipped(piece.currentFlipped, animated: false)
         piece.disableGravity()
         piece.run(.group([
             .move(to: position, duration: 0.12),
@@ -547,9 +547,12 @@ final class GameScene: SKScene {
 
     func makeShapeNode(for piece: PieceDefinition, filled: Bool) -> SKShapeNode {
         let unit = pieceUnit(for: piece)
+        // Mirroring is baked into the path (not node xScale) so that scale
+        // animations on the node can never undo the flip.
+        let mirror: CGFloat = piece.targetFlipped ? -1 : 1
         let path = CGMutablePath()
         let points = piece.shape.unitPoints.map {
-            CGPoint(x: ($0.x - 0.5) * unit, y: ($0.y - 0.5) * unit)
+            CGPoint(x: ($0.x - 0.5) * unit * mirror, y: ($0.y - 0.5) * unit)
         }
         path.addLines(between: points)
         path.closeSubpath()

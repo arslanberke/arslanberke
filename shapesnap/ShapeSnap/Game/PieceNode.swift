@@ -58,6 +58,24 @@ final class PieceNode: SKNode {
             body.strokeColor = UIColor.cyan
             body.lineWidth = 3
         }
+
+        if definition.spawnFlipped {
+            body.xScale = -1
+            shadow.xScale = -1
+        }
+    }
+
+    /// Flip is applied to the body (not the node) so node-level scale
+    /// animations — drag pop, pulsing, snapping — can never wipe it out.
+    func setFlipped(_ flipped: Bool, animated: Bool = true) {
+        let scaleX: CGFloat = flipped ? -1 : 1
+        if animated {
+            body.run(.scaleX(to: scaleX, duration: 0.18))
+            shadow.run(.scaleX(to: scaleX, duration: 0.18))
+        } else {
+            body.xScale = scaleX
+            shadow.xScale = scaleX
+        }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
