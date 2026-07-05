@@ -111,7 +111,20 @@ Validation via `class-validator`, auth via `Authorization: Bearer <accessToken>`
 See `backend/.env.example`. Frontend uses `NEXT_PUBLIC_API_URL`; mobile uses
 `--dart-define=API_URL=...`.
 
-## Risks of monitoring Instagram data (why the mock provider is the default)
+## Checker providers
+
+Selected via `PROFILE_CHECKER_PROVIDER`:
+
+- **`mock`** (default) — deterministic simulation; no external calls. Safe for
+  development and demos.
+- **`instagram_web`** — resolves real visibility from Instagram's public
+  `web_profile_info` endpoint (the same JSON the website itself fetches). No login
+  and no API key. Instagram rate-limits by IP, so under bursts it returns HTTP 429
+  and the checker resolves to `UNKNOWN`; errors never crash a check. Fine for low
+  volume with the default 15-minute interval, but not for high throughput from a
+  single IP.
+
+## Risks of monitoring Instagram data
 
 - Automated collection violates Instagram's Terms of Use; the official Graph API
   only covers accounts you manage.
@@ -121,5 +134,6 @@ See `backend/.env.example`. Frontend uses `NEXT_PUBLIC_API_URL`; mobile uses
 - Legal/compliance exposure (ToS enforcement, GDPR/KVKK obligations when processing
   third-party data).
 
-Recommended production path: a licensed third-party data provider implemented behind
-`ProfileChecker`.
+Recommended production path for scale: a licensed third-party data provider (or
+rotating proxies) implemented behind `ProfileChecker` — one class + one registry
+entry, nothing else changes.
