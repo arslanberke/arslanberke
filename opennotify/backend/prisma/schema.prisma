@@ -1,0 +1,168 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum Plan {
+  FREE
+  PRO
+  BUSINESS
+}
+
+enum ProfileStatus {
+  PUBLIC
+  PRIVATE
+  UNKNOWN
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  PUSH
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELED
+  PAST_DUE
+  TRIALING
+}
+
+model User {
+  id                String    @id @default(uuid())
+  email             String    @unique
+  passwordHash      String?
+  name              String
+  avatarUrl         String?
+  role              Role      @default(USER)
+  isDisabled        Boolean   @default(false)
+  emailVerifiedAt   DateTime?
+  googleId          String?   @unique
+  language          String    @default("en")
+  darkMode          Boolean   @default(true)
+  emailNotifications Boolean  @default(true)
+  pushNotifications  Boolean  @default(true)
+  inAppNotifications Boolean  @default(true)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  monitoredProfiles MonitoredProfile[]
+  notifications     Notification[]
+  refreshTokens     RefreshToken[]
+  verificationTokens VerificationToken[]
+  subscription      Subscription?
+  pushDevices       PushDevice[]
+  auditLogs         AuditLog[]
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  id        String   @id @default(uuid())
+  tokenHash String   @unique
+  type      String   // EMAIL_VERIFY | PASSWORD_RESET
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId, type])
+}
+
+model MonitoredProfile {
+  id                String        @id @default(uuid())
+  username          String
+  userId            String
+  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  currentStatus     ProfileStatus @default(UNKNOWN)
+  monitoringEnabled Boolean       @default(true)
+  lastCheckedAt     DateTime?
+  lastChangedAt     DateTime?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  statusChanges StatusChange[]
+
+  @@unique([userId, username])
+  @@index([monitoringEnabled])
+}
+
+model StatusChange {
+  id        String        @id @default(uuid())
+  profileId String
+  profile   MonitoredProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  oldStatus ProfileStatus
+  newStatus ProfileStatus
+  createdAt DateTime      @default(now())
+
+  @@index([profileId, createdAt])
+}
+
+model Notification {
+  id        String              @id @default(uuid())
+  userId    String
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel   NotificationChannel
+  title     String
+  body      String
+  readAt    DateTime?
+  createdAt DateTime            @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model Subscription {
+  id                   String             @id @default(uuid())
+  userId               String             @unique
+  user                 User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan                 Plan               @default(FREE)
+  status               SubscriptionStatus @default(ACTIVE)
+  stripeCustomerId     String?            @unique
+  stripeSubscriptionId String?            @unique
+  currentPeriodEnd     DateTime?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+}
+
+model PushDevice {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  platform  String   // ios | android | web
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String
+  metadata  Json?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
